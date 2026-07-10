@@ -24,7 +24,9 @@ if categories.empty:
 # ---------------------------------------------------------------------------
 existing_years = get_budget_years()
 this_year = date.today().year
-year_options = sorted(set(existing_years + [this_year, this_year + 1]), reverse=True)
+# Future-proof: always offer through several upcoming years, plus any that exist
+future = list(range(this_year - 1, this_year + 6))
+year_options = sorted(set(existing_years + future), reverse=True)
 
 top_l, top_r = st.columns([1, 2])
 with top_l:

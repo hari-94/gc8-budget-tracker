@@ -45,6 +45,9 @@ def login_form():
             result = client.rpc("verify_login", {"p_username": username, "p_password": password}).execute()
             if result.data:
                 st.session_state["profile"] = result.data[0]
+                from utils.db import log_activity
+                from utils.helpers import get_device
+                log_activity(result.data[0].get("username"), "login", get_device(), "")
                 st.rerun()
             else:
                 st.error("That username and password don't match. Try again.")

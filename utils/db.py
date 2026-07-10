@@ -109,7 +109,17 @@ def get_expenses(status=None, category_code=None, date_from=None, date_to=None, 
     return pd.DataFrame(res.data)
 
 
-def add_expense(category_code, vendor, invoice_number, txn_date, amount, status, notes, user_id):
+def expense_exists(category_code, txn_date, amount, vendor, invoice_number) -> bool:
+    client = get_client()
+    res = client.rpc("expense_exists", {
+        "p_category": category_code, "p_date": str(txn_date), "p_amount": amount,
+        "p_vendor": vendor or "", "p_invoice": invoice_number or "",
+    }).execute()
+    return bool(res.data)
+
+
+def add_expense(category_code, vendor, invoice_number, txn_date, amount, status, notes,
+                user_id, device=None):
     client = get_authed_client()
     client.table("expenses").insert({
         "category_code": category_code,
@@ -121,24 +131,31 @@ def add_expense(category_code, vendor, invoice_number, txn_date, amount, status,
         "notes": notes,
         "created_by": user_id,
         "updated_by": user_id,
+        "created_device": device,
+        "updated_device": device,
     }).execute()
     add_vendor_if_new(vendor)
+    log_activity(user_id, "add_expense", device, f"{category_code} ${amount}")
     st.cache_data.clear()
 
 
-def update_expense(expense_id, fields: dict, user_id):
+def update_expense(expense_id, fields: dict, user_id, device=None):
     client = get_authed_client()
     fields["updated_by"] = user_id
+    fields["updated_device"] = device
     client.table("expenses").update(fields).eq("id", expense_id).execute()
+    log_activity(user_id, "edit_expense", device, str(expense_id))
     st.cache_data.clear()
 
 
-def soft_delete_expense(expense_id, user_id):
+def soft_delete_expense(expense_id, user_id, device=None):
     client = get_authed_client()
     client.table("expenses").update({
         "deleted_at": pd.Timestamp.utcnow().isoformat(),
         "updated_by": user_id,
+        "updated_device": device,
     }).eq("id", expense_id).execute()
+    log_activity(user_id, "delete_expense", device, str(expense_id))
     st.cache_data.clear()
 
 
@@ -189,6 +206,27 @@ def update_user_role(username, role):
 def delete_app_user(username):
     client = get_authed_client()
     client.rpc("delete_app_user", {"p_username": username}).execute()
+
+
+# ---------------------------------------------------------------------------
+# Activity / device tracking
+# ---------------------------------------------------------------------------
+
+def log_activity(username, action, device, detail=""):
+    try:
+        client = get_authed_client()
+        client.rpc("log_activity", {
+            "p_username": username, "p_action": action,
+            "p_device": device or "", "p_detail": detail or "",
+        }).execute()
+    except Exception:
+        pass  # never let logging break the main action
+
+
+def get_recent_activity(limit=100) -> pd.DataFrame:
+    client = get_client()
+    res = client.rpc("recent_activity", {"p_limit": limit}).execute()
+    return pd.DataFrame(res.data)
 
 
 # ---------------------------------------------------------------------------
