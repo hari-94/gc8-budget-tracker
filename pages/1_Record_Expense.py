@@ -2,13 +2,9 @@ import streamlit as st
 from datetime import date
 
 from utils.auth import require_login, logout_button, can_edit, current_username
-from utils.theme import inject_theme, section_label
+from utils.theme import inject_theme, section_label, INK_FAINT
 from utils.db import get_categories, get_vendors, add_expense
 
-st.set_page_config(page_title="Record Expense · GC8 Budget", page_icon="◆", layout="wide")
-inject_theme()
-require_login()
-logout_button()
 
 section_label("Entry")
 st.title("Record an Expense")
@@ -29,7 +25,6 @@ cat_options = dict(zip(
 ))
 
 vendors = sorted(get_vendors())
-ADD_NEW = "＋ Add a new vendor"
 
 st.markdown(
     "Record money already spent, an invoice awaiting payment, or an upcoming cost "
@@ -40,11 +35,19 @@ st.write("")
 col1, col2 = st.columns(2)
 with col1:
     cat_label = st.selectbox("Category", options=list(cat_options.keys()))
-    vendor_choice = st.selectbox("Vendor", options=vendors + [ADD_NEW])
-    if vendor_choice == ADD_NEW:
-        vendor = st.text_input("New vendor name", placeholder="e.g. Mountain Pride")
+
+    # Vendor: pick from the existing list, or toggle on a field for a brand-new one
+    add_new_vendor = st.toggle("Add a vendor that isn't in the list yet")
+    if add_new_vendor:
+        vendor = st.text_input("New vendor name", placeholder="Type the vendor's name")
     else:
-        vendor = vendor_choice
+        if vendors:
+            vendor = st.selectbox("Vendor", options=vendors,
+                                  index=None, placeholder="Choose a vendor")
+        else:
+            vendor = None
+            st.caption("No vendors on file yet — switch on the toggle above to add the first one.")
+
     invoice_number = st.text_input("Invoice number", placeholder="Optional")
 with col2:
     txn_date = st.date_input("Date", value=date.today())
@@ -64,11 +67,11 @@ if st.button("Record expense", type="primary", use_container_width=True):
     elif not cat_label:
         st.error("Choose a category.")
     elif not vendor:
-        st.error("Choose or enter a vendor.")
+        st.error("Choose an existing vendor, or switch on the toggle to add a new one.")
     else:
         add_expense(
             category_code=cat_options[cat_label],
-            vendor=vendor,
+            vendor=vendor.strip(),
             invoice_number=invoice_number,
             txn_date=txn_date,
             amount=amount,

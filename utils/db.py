@@ -73,6 +73,22 @@ def upsert_budget_allocation(category_code, fiscal_year, month, amount, user_id)
     }, on_conflict="category_code,fiscal_year,month").execute()
 
 
+def copy_budget_year(from_year, to_year) -> int:
+    """Seed a new fiscal year from an existing one. Returns rows copied."""
+    client = get_authed_client()
+    res = client.rpc("copy_budget_year", {"p_from_year": from_year, "p_to_year": to_year}).execute()
+    st.cache_data.clear()
+    return res.data if isinstance(res.data, int) else 0
+
+
+@st.cache_data(ttl=120)
+def get_budget_years() -> list:
+    client = get_client()
+    res = client.table("budget_allocations").select("fiscal_year").execute()
+    years = sorted({r["fiscal_year"] for r in res.data}, reverse=True)
+    return years
+
+
 # ---------------------------------------------------------------------------
 # Expenses
 # ---------------------------------------------------------------------------
