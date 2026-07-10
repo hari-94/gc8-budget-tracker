@@ -84,6 +84,7 @@ EXTRA_CATEGORIES = {
     '72600-530': ('Spa Infinity', 'Other'),
     '73690':     ('Parts & Supplies', 'Other'),
     '65200-71':  ('Sales Gallery Carpet', 'Other'),
+    '65200-71-WC': ('Sales Gallery Window Cleaning', 'Other'),
     '65200-102': ('Sales Guest Services', 'Other'),
     '74940-550': ('Dishwasher Room Lobby Bar (not Hskp)', 'Other'),
 }
@@ -108,6 +109,11 @@ def extract_expenses(wb, sheet_names, out_path):
             if not code:
                 unmatched.append((category, amount))
                 continue
+            # 65200-71 was reused for two different expense types in the source sheet -
+            # split "Sales Gallery Window Cleaning" onto its own code so it doesn't get
+            # mixed in with "Sales Gallery Carpet" totals.
+            if code == '65200-71' and str(category).strip().lower() == 'sales gallery window cleaning':
+                code = '65200-71-WC'
             if isinstance(date, datetime):
                 txn_date = date.strftime('%Y-%m-%d')
             else:

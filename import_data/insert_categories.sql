@@ -1,0 +1,9 @@
+-- Extra one-off categories not in the main Budget_26 chart of accounts
+insert into public.categories (code, name, group_name, type) values
+  ('72600-530', 'Spa Infinity', 'Other', 'expense'),
+  ('73690', 'Parts & Supplies', 'Other', 'expense'),
+  ('65200-71', 'Sales Gallery Carpet', 'Other', 'expense'),
+  ('65200-71-WC', 'Sales Gallery Window Cleaning', 'Other', 'expense'),
+  ('65200-102', 'Sales Guest Services', 'Other', 'expense'),
+  ('74940-550', 'Dishwasher Room Lobby Bar (not Hskp)', 'Other', 'expense')
+on conflict (code) do nothing;

@@ -1,6 +1,5 @@
 import streamlit as st
 import pandas as pd
-import plotly.express as px
 import plotly.graph_objects as go
 from datetime import date
 
@@ -75,7 +74,9 @@ with right:
         grp = bva[bva["type"] == "expense"].groupby("group_name", as_index=False)["spent_amount"].sum()
         grp = grp[grp["spent_amount"] > 0]
         if not grp.empty:
-            fig2 = px.pie(grp, values="spent_amount", names="group_name", hole=0.55)
+            fig2 = go.Figure(data=[go.Pie(
+                labels=grp["group_name"], values=grp["spent_amount"], hole=0.55
+            )])
             fig2.update_layout(height=420, showlegend=True)
             st.plotly_chart(fig2, use_container_width=True)
         else:

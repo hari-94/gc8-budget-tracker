@@ -1,7 +1,7 @@
 import streamlit as st
 from datetime import date
 
-from utils.auth import require_login, logout_button, can_edit
+from utils.auth import require_login, logout_button, can_edit, current_username
 from utils.db import get_categories, get_vendors, add_expense
 
 st.set_page_config(page_title="Add Expense", page_icon="📝", layout="wide")
@@ -64,7 +64,7 @@ with st.form("add_expense_form", clear_on_submit=True):
                 status=status,
                 notes=notes,
                 building=building or None,
-                user_id=st.session_state["user"].id,
+                user_id=current_username(),
             )
             st.success(f"Added ${amount:,.2f} — {cat_label} on {txn_date}")
             st.balloons()

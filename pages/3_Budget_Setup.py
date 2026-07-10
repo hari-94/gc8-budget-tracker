@@ -1,7 +1,7 @@
 import streamlit as st
 import pandas as pd
 
-from utils.auth import require_login, logout_button, can_edit
+from utils.auth import require_login, logout_button, can_edit, current_username
 from utils.db import get_categories, get_budget_vs_actual, upsert_budget_allocation
 
 st.set_page_config(page_title="Budget Setup", page_icon="💰", layout="wide")
@@ -52,7 +52,7 @@ else:
         submitted = st.form_submit_button("Save Budget", type="primary", use_container_width=True)
         if submitted:
             for m, amt in new_values.items():
-                upsert_budget_allocation(code, fiscal_year, m, amt, st.session_state["user"].id)
+                upsert_budget_allocation(code, fiscal_year, m, amt, current_username())
             st.cache_data.clear()
             st.success("Budget saved.")
             st.rerun()

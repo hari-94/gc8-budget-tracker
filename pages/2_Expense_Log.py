@@ -2,7 +2,7 @@ import streamlit as st
 import pandas as pd
 from datetime import date, datetime
 
-from utils.auth import require_login, logout_button, can_edit, is_admin
+from utils.auth import require_login, logout_button, can_edit, is_admin, current_username
 from utils.db import (
     get_categories, get_expenses, update_expense, soft_delete_expense,
     hard_delete_expense, get_expense_notes, add_expense_note, get_expense_history
@@ -101,12 +101,12 @@ with tab_edit:
                 update_expense(expense_id, {
                     "amount": new_amount, "status": new_status, "vendor": new_vendor,
                     "txn_date": str(new_date), "invoice_number": new_invoice, "notes": new_notes,
-                }, st.session_state["user"].id)
+                }, current_username())
                 st.success("Updated.")
                 st.rerun()
 
             if delete:
-                soft_delete_expense(expense_id, st.session_state["user"].id)
+                soft_delete_expense(expense_id, current_username())
                 st.success("Deleted (recoverable by an admin via the audit log).")
                 st.rerun()
 
@@ -117,11 +117,11 @@ with tab_notes:
         new_note = st.text_area("Add a note", key=f"note_{expense_id}")
         if st.button("Post Note", key=f"post_{expense_id}"):
             if new_note.strip():
-                add_expense_note(expense_id, new_note.strip(), st.session_state["user"].id)
+                add_expense_note(expense_id, new_note.strip(), current_username())
                 st.rerun()
     if not existing_notes.empty:
         for _, n in existing_notes.iterrows():
-            author = (n.get("profiles") or {}).get("email", "Someone") if isinstance(n.get("profiles"), dict) else "Someone"
+            author = n.get("created_by") or "Someone"
             when = pd.to_datetime(n["created_at"]).strftime("%b %d, %Y %I:%M %p")
             st.markdown(f"**{author}** · _{when}_")
             st.write(n["note"])

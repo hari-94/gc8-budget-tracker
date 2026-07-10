@@ -12,13 +12,9 @@ def get_client() -> Client:
 
 
 def get_authed_client() -> Client:
-    """Returns a Supabase client with the logged-in user's session attached,
-    so RLS policies (which check auth.uid()) apply correctly."""
-    client = get_client()
-    session = st.session_state.get("session")
-    if session:
-        client.postgrest.auth(session.access_token)
-    return client
+    """No Supabase Auth session in this app (simple username/password table instead) -
+    just use the same anon client. Access control happens at the app's login screen."""
+    return get_client()
 
 
 # ---------------------------------------------------------------------------
@@ -144,7 +140,7 @@ def hard_delete_expense(expense_id):
 
 def get_expense_notes(expense_id) -> pd.DataFrame:
     client = get_client()
-    res = client.table("expense_notes").select("*, profiles(email,full_name)") \
+    res = client.table("expense_notes").select("*") \
         .eq("expense_id", expense_id).order("created_at", desc=True).execute()
     return pd.DataFrame(res.data)
 
