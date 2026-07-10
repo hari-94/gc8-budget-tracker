@@ -2,13 +2,16 @@ import streamlit as st
 import pandas as pd
 
 from utils.auth import require_login, logout_button, can_edit, current_username
+from utils.theme import inject_theme, section_label
 from utils.db import get_categories, get_budget_vs_actual, upsert_budget_allocation
 
-st.set_page_config(page_title="Budget Setup", page_icon="💰", layout="wide")
+st.set_page_config(page_title="Budget Planner · GC8 Budget", page_icon="◆", layout="wide")
+inject_theme()
 require_login()
 logout_button()
 
-st.title("💰 Budget Setup")
+section_label("Planning")
+st.title("Budget Planner")
 st.caption("Set or adjust the monthly budgeted amount for each category.")
 
 fiscal_year = st.selectbox("Fiscal Year", options=[2026, 2025, 2027], index=0)
@@ -46,7 +49,7 @@ else:
         for i, m in enumerate(range(1, 13)):
             with cols[i % 4]:
                 new_values[m] = st.number_input(month_names[m-1], value=month_amounts[m],
-                                                  min_value=0.0, step=100.0, key=f"m_{code}_{m}")
+                                                  step=100.0, key=f"m_{code}_{m}")
         total = sum(new_values.values())
         st.metric("Annual Total", f"${total:,.2f}")
         submitted = st.form_submit_button("Save Budget", type="primary", use_container_width=True)
@@ -58,7 +61,7 @@ else:
             st.rerun()
 
 st.divider()
-st.subheader("All Categories — Annual Totals")
+st.subheader("All categories — annual totals")
 if not bva.empty:
     summary = bva.groupby(["code", "name"], as_index=False)["budgeted_amount"].sum() \
         .sort_values("budgeted_amount", ascending=False)

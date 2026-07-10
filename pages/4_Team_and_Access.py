@@ -1,18 +1,21 @@
 import streamlit as st
 from utils.auth import require_login, logout_button, is_admin
+from utils.theme import inject_theme, section_label
 from utils.db import list_app_users, upsert_app_user, update_user_role, delete_app_user
 
-st.set_page_config(page_title="Admin", page_icon="👥", layout="wide")
+st.set_page_config(page_title="Team & Access · GC8 Budget", page_icon="◆", layout="wide")
+inject_theme()
 require_login()
 logout_button()
 
-st.title("👥 Admin — User Management")
+section_label("Administration")
+st.title("Team & Access")
 
 if not is_admin():
     st.warning("Admins only.")
     st.stop()
 
-st.subheader("Existing users")
+st.subheader("Current team")
 users = list_app_users()
 if users.empty:
     st.caption("No users found.")
@@ -39,7 +42,7 @@ else:
                 st.rerun()
         st.divider()
 
-st.subheader("Add or update a user")
+st.subheader("Add or update a login")
 st.caption("If the username already exists, this resets their password and role.")
 with st.form("user_form", clear_on_submit=True):
     c1, c2 = st.columns(2)
