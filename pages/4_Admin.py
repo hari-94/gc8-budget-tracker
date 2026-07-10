@@ -1,6 +1,6 @@
 import streamlit as st
 from utils.auth import require_login, logout_button, is_admin
-from utils.db import get_client
+from utils.db import list_app_users, upsert_app_user, update_user_role, delete_app_user
 
 st.set_page_config(page_title="Admin", page_icon="👥", layout="wide")
 require_login()
@@ -12,7 +12,32 @@ if not is_admin():
     st.warning("Admins only.")
     st.stop()
 
-client = get_client()
+st.subheader("Existing users")
+users = list_app_users()
+if users.empty:
+    st.caption("No users found.")
+else:
+    for _, u in users.iterrows():
+        c1, c2, c3 = st.columns([3, 2, 1])
+        with c1:
+            st.write(f"**{u['full_name'] or u['username']}**  \n`{u['username']}`")
+        with c2:
+            new_role = st.selectbox(
+                "Role", options=["admin", "editor", "viewer"],
+                index=["admin", "editor", "viewer"].index(u["role"]),
+                key=f"role_{u['username']}", label_visibility="collapsed"
+            )
+            if new_role != u["role"]:
+                if st.button("Update role", key=f"update_{u['username']}"):
+                    update_user_role(u["username"], new_role)
+                    st.success(f"{u['username']} -> {new_role}")
+                    st.rerun()
+        with c3:
+            if st.button("Delete", key=f"delete_{u['username']}"):
+                delete_app_user(u["username"])
+                st.success(f"Deleted {u['username']}")
+                st.rerun()
+        st.divider()
 
 st.subheader("Add or update a user")
 st.caption("If the username already exists, this resets their password and role.")
@@ -30,21 +55,11 @@ with st.form("user_form", clear_on_submit=True):
         if not username or not password:
             st.error("Username and password are required.")
         else:
-            client.rpc("upsert_app_user", {
-                "p_username": username.strip().lower(),
-                "p_password": password,
-                "p_full_name": full_name,
-                "p_role": role,
-            }).execute()
+            upsert_app_user(username.strip().lower(), password, full_name, role)
             st.success(f"Saved {username} as {role}.")
+            st.rerun()
 
-st.divider()
 st.caption(
     "Roles: **admin** (full control incl. permanent delete + user management), "
     "**editor** (can add/edit/soft-delete expenses & budget), **viewer** (read-only)."
-)
-st.info(
-    "There's no list of existing users here since passwords are hashed and never stored in "
-    "readable form. To check who exists, look at the `app_users` table in Supabase Table Editor "
-    "(username, full_name, role are visible - passwords are not)."
 )

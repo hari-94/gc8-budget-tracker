@@ -5,7 +5,8 @@ from datetime import date, datetime
 from utils.auth import require_login, logout_button, can_edit, is_admin, current_username
 from utils.db import (
     get_categories, get_expenses, update_expense, soft_delete_expense,
-    hard_delete_expense, get_expense_notes, add_expense_note, get_expense_history
+    hard_delete_expense, get_expense_notes, add_expense_note, get_expense_history,
+    get_deleted_expenses, restore_expense
 )
 
 st.set_page_config(page_title="Expense Log", page_icon="📋", layout="wide")
@@ -152,3 +153,32 @@ if is_admin():
             hard_delete_expense(expense_id)
             st.success("Permanently deleted.")
             st.rerun()
+
+st.divider()
+
+# ---------------------------------------------------------------------------
+# Recently deleted (soft-deleted) expenses - restorable
+# ---------------------------------------------------------------------------
+with st.expander("🗑 Recently Deleted"):
+    deleted = get_deleted_expenses()
+    if deleted.empty:
+        st.caption("Nothing deleted.")
+    else:
+        deleted["category"] = deleted["category_code"].map(cat_name_map).fillna(deleted["category_code"])
+        for _, d in deleted.iterrows():
+            c1, c2 = st.columns([5, 1])
+            with c1:
+                when_deleted = pd.to_datetime(d["deleted_at"]).strftime("%b %d, %Y %I:%M %p")
+                st.markdown(
+                    f"**{d['txn_date']} · {d['category']} · {d.get('vendor') or ''} · "
+                    f"${float(d['amount']):,.2f}**  \n"
+                    f"<span style='color:var(--text-secondary); font-size:13px;'>Deleted {when_deleted} by {d.get('updated_by') or 'unknown'}</span>",
+                    unsafe_allow_html=True,
+                )
+            with c2:
+                if can_edit():
+                    if st.button("Restore", key=f"restore_{d['id']}"):
+                        restore_expense(d["id"])
+                        st.success("Restored.")
+                        st.rerun()
+            st.divider()

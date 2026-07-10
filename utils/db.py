@@ -93,7 +93,7 @@ def get_expenses(status=None, category_code=None, date_from=None, date_to=None, 
     return pd.DataFrame(res.data)
 
 
-def add_expense(category_code, vendor, invoice_number, txn_date, amount, status, notes, building, user_id):
+def add_expense(category_code, vendor, invoice_number, txn_date, amount, status, notes, user_id):
     client = get_authed_client()
     client.table("expenses").insert({
         "category_code": category_code,
@@ -103,7 +103,6 @@ def add_expense(category_code, vendor, invoice_number, txn_date, amount, status,
         "amount": amount,
         "status": status,
         "notes": notes,
-        "building": building,
         "created_by": user_id,
         "updated_by": user_id,
     }).execute()
@@ -132,6 +131,48 @@ def hard_delete_expense(expense_id):
     client = get_authed_client()
     client.table("expenses").delete().eq("id", expense_id).execute()
     st.cache_data.clear()
+
+
+@st.cache_data(ttl=30)
+def get_deleted_expenses(limit=200) -> pd.DataFrame:
+    client = get_client()
+    res = client.table("expenses").select("*").not_.is_("deleted_at", "null") \
+        .order("deleted_at", desc=True).limit(limit).execute()
+    return pd.DataFrame(res.data)
+
+
+def restore_expense(expense_id):
+    client = get_authed_client()
+    client.rpc("restore_expense", {"p_expense_id": expense_id}).execute()
+    st.cache_data.clear()
+
+
+# ---------------------------------------------------------------------------
+# User management (simple username/password table)
+# ---------------------------------------------------------------------------
+
+def list_app_users() -> pd.DataFrame:
+    client = get_client()
+    res = client.rpc("list_app_users", {}).execute()
+    return pd.DataFrame(res.data)
+
+
+def upsert_app_user(username, password, full_name, role):
+    client = get_authed_client()
+    client.rpc("upsert_app_user", {
+        "p_username": username, "p_password": password,
+        "p_full_name": full_name, "p_role": role,
+    }).execute()
+
+
+def update_user_role(username, role):
+    client = get_authed_client()
+    client.rpc("update_user_role", {"p_username": username, "p_role": role}).execute()
+
+
+def delete_app_user(username):
+    client = get_authed_client()
+    client.rpc("delete_app_user", {"p_username": username}).execute()
 
 
 # ---------------------------------------------------------------------------
