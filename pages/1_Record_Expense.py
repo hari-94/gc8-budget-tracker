@@ -121,11 +121,20 @@ if st.button(label, type="primary", use_container_width=True):
                 "If it's genuinely a separate charge, press **Record anyway**."
             )
             st.stop()
-        add_expense(
-            category_code=code, vendor=vendor.strip(),
-            invoice_number=inv_clean, txn_date=txn_date, amount=amount,
-            status=status, notes=notes, user_id=current_username(), device=get_device(),
-        )
+        try:
+            add_expense(
+                category_code=code, vendor=vendor.strip(),
+                invoice_number=inv_clean, txn_date=txn_date, amount=amount,
+                status=status, notes=notes, user_id=current_username(), device=get_device(),
+            )
+        except ValueError:
+            # Blocked by the database dedup guard
+            st.session_state["force_dup"] = False
+            st.error(
+                "This exact expense is already recorded, so it wasn't added again. "
+                "If it's genuinely a separate charge, change the invoice number to tell them apart."
+            )
+            st.stop()
         st.session_state["force_dup"] = False
         success_animation(f"Recorded ${amount:,.2f}")
         st.rerun()
