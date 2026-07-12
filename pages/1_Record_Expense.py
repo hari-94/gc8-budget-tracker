@@ -112,7 +112,7 @@ if st.button(label, type="primary", use_container_width=True):
         st.error("Choose an existing vendor, or switch on the toggle to add a new one.")
     else:
         # Duplicate guard
-        dup = expense_exists(code, txn_date, amount, vendor, inv_clean if inv_clean != "NA" else "")
+        dup = expense_exists(code, txn_date, amount, vendor, inv_clean)
         if dup and not force:
             st.session_state["force_dup"] = True
             st.warning(
