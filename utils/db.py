@@ -121,19 +121,25 @@ def expense_exists(category_code, txn_date, amount, vendor, invoice_number) -> b
 def add_expense(category_code, vendor, invoice_number, txn_date, amount, status, notes,
                 user_id, device=None):
     client = get_authed_client()
-    client.table("expenses").insert({
-        "category_code": category_code,
-        "vendor": vendor,
-        "invoice_number": invoice_number,
-        "txn_date": str(txn_date),
-        "amount": amount,
-        "status": status,
-        "notes": notes,
-        "created_by": user_id,
-        "updated_by": user_id,
-        "created_device": device,
-        "updated_device": device,
-    }).execute()
+    try:
+        client.table("expenses").insert({
+            "category_code": category_code,
+            "vendor": vendor,
+            "invoice_number": invoice_number,
+            "txn_date": str(txn_date),
+            "amount": amount,
+            "status": status,
+            "notes": notes,
+            "created_by": user_id,
+            "updated_by": user_id,
+            "created_device": device,
+            "updated_device": device,
+        }).execute()
+    except Exception as e:
+        msg = str(e).lower()
+        if "uq_expenses_no_dupes" in msg or "duplicate key" in msg or "unique" in msg:
+            raise ValueError("DUPLICATE") from e
+        raise
     add_vendor_if_new(vendor)
     log_activity(user_id, "add_expense", device, f"{category_code} ${amount}")
     st.cache_data.clear()
