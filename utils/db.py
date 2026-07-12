@@ -42,6 +42,21 @@ def add_vendor_if_new(name: str):
     client.table("vendors").upsert({"name": name.strip()}, on_conflict="name").execute()
 
 
+def delete_vendor(name: str):
+    """Remove a vendor from the picker list. Does not touch existing expenses."""
+    client = get_authed_client()
+    client.table("vendors").delete().eq("name", name).execute()
+    st.cache_data.clear()
+
+
+def vendor_usage_count(name: str) -> int:
+    """How many active expenses reference this vendor (so we can warn before deleting)."""
+    client = get_client()
+    res = client.table("expenses").select("id", count="exact") \
+        .eq("vendor", name).is_("deleted_at", "null").execute()
+    return res.count or 0
+
+
 # ---------------------------------------------------------------------------
 # Budget
 # ---------------------------------------------------------------------------
