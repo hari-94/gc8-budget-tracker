@@ -5,7 +5,8 @@ from datetime import date
 from utils.auth import require_login, logout_button, can_edit, current_username
 from utils.theme import inject_theme, section_label, GREEN, INK_FAINT
 from utils.helpers import get_device
-from utils.db import get_categories, get_vendors, add_expense, expense_exists
+from utils.db import (get_categories, get_vendors, add_expense, expense_exists,
+                      delete_vendor, vendor_usage_count)
 
 section_label("Entry")
 st.title("Record an Expense")
@@ -138,3 +139,53 @@ if st.button(label, type="primary", use_container_width=True):
         st.session_state["force_dup"] = False
         success_animation(f"Recorded ${amount:,.2f}")
         st.rerun()
+
+# ---------------------------------------------------------------------------
+# Manage vendors — remove ones added by mistake or no longer used
+# ---------------------------------------------------------------------------
+st.divider()
+with st.expander("Manage vendors"):
+    st.caption("Remove a vendor from the picker. This does not change or delete any "
+               "expenses already recorded against that vendor.")
+    if not vendors:
+        st.caption("No vendors on file yet.")
+    else:
+        vc1, vc2 = st.columns([3, 1])
+        with vc1:
+            to_remove = st.selectbox("Vendor to remove", options=vendors,
+                                     index=None, placeholder="Choose a vendor",
+                                     key="vendor_remove")
+        with vc2:
+            st.write("")
+            st.write("")
+            if st.button("Remove", use_container_width=True, disabled=not to_remove):
+                used = vendor_usage_count(to_remove)
+                if used > 0:
+                    st.session_state["vendor_pending"] = to_remove
+                    st.session_state["vendor_used"] = used
+                else:
+                    delete_vendor(to_remove)
+                    st.success(f"Removed “{to_remove}”.")
+                    st.rerun()
+
+        # Confirmation when the vendor is still referenced by expenses
+        pending = st.session_state.get("vendor_pending")
+        if pending:
+            st.warning(
+                f"“{pending}” is used by {st.session_state.get('vendor_used', 0)} existing "
+                f"expense(s). Removing it only takes it out of the picker — those expenses keep "
+                f"their vendor name. Remove it anyway?"
+            )
+            cc1, cc2 = st.columns(2)
+            with cc1:
+                if st.button("Yes, remove it", type="primary", use_container_width=True):
+                    delete_vendor(pending)
+                    st.session_state.pop("vendor_pending", None)
+                    st.session_state.pop("vendor_used", None)
+                    st.success(f"Removed “{pending}”.")
+                    st.rerun()
+            with cc2:
+                if st.button("Cancel", use_container_width=True):
+                    st.session_state.pop("vendor_pending", None)
+                    st.session_state.pop("vendor_used", None)
+                    st.rerun()
