@@ -138,6 +138,7 @@ editor_df = pd.DataFrame({
 })
 edited = st.data_editor(
     editor_df, hide_index=True, use_container_width=True, key=f"editor_{wk_key}",
+    height=460,  # fits all 12 month rows + header without an inner scrollbar
     disabled=["Month", "Current", "Actual"],
     column_config={
         "Current": st.column_config.NumberColumn(format="$%.2f", help="Currently saved budget"),
