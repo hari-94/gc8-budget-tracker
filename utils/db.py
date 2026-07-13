@@ -22,10 +22,33 @@ def get_authed_client() -> Client:
 # ---------------------------------------------------------------------------
 
 @st.cache_data(ttl=300)
-def get_categories() -> pd.DataFrame:
+def get_categories(include_archived: bool = False) -> pd.DataFrame:
     client = get_client()
-    res = client.table("categories").select("*").eq("is_active", True).order("code").execute()
-    return pd.DataFrame(res.data)
+    q = client.table("categories").select("*").eq("is_active", True)
+    res = q.order("code").execute()
+    df = pd.DataFrame(res.data)
+    if df.empty:
+        return df
+    # 'archived' column may not exist pre-migration; guard for it
+    if "archived" in df.columns and not include_archived:
+        df = df[df["archived"] != True]
+    return df.reset_index(drop=True)
+
+
+@st.cache_data(ttl=120)
+def get_category_entry_counts() -> pd.DataFrame:
+    client = get_client()
+    try:
+        res = client.rpc("category_entry_counts", {}).execute()
+        return pd.DataFrame(res.data)
+    except Exception:
+        return pd.DataFrame(columns=["code", "entry_count", "total_amount"])
+
+
+def set_category_archived(code: str, archived: bool):
+    client = get_authed_client()
+    client.rpc("set_category_archived", {"p_code": code, "p_archived": archived}).execute()
+    st.cache_data.clear()
 
 
 @st.cache_data(ttl=300)
