@@ -100,13 +100,24 @@ def inject_theme():
         border: 1px solid {LINE};
         transition: all 0.12s ease;
     }}
-    .stButton button[kind="primary"] {{
+    .stButton button[kind="primary"],
+    .stButton button[kind="primaryFormSubmit"],
+    .stFormSubmitButton button[kind="primary"] {{
         background: {GREEN};
         border-color: {GREEN};
+        color: #FFFFFF !important;
     }}
-    .stButton button[kind="primary"]:hover {{
+    .stButton button[kind="primary"] *,
+    .stButton button[kind="primaryFormSubmit"] *,
+    .stFormSubmitButton button[kind="primary"] * {{
+        color: #FFFFFF !important;
+    }}
+    .stButton button[kind="primary"]:hover,
+    .stButton button[kind="primaryFormSubmit"]:hover,
+    .stFormSubmitButton button[kind="primary"]:hover {{
         background: {GREEN_SOFT};
         border-color: {GREEN_SOFT};
+        color: #FFFFFF !important;
     }}
 
     /* Inputs */
