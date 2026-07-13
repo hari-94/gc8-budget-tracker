@@ -225,7 +225,9 @@ st.divider()
 # ---------------------------------------------------------------------------
 st.subheader("All categories — annual totals")
 if not bva.empty:
-    summary = bva.groupby(["code", "name"], as_index=False).agg(
+    _active = set(cat_label_map.values())  # active expense codes shown in the picker
+    _bva_active = bva[bva["code"].isin(_active)]
+    summary = _bva_active.groupby(["code", "name"], as_index=False).agg(
         budget=("budgeted_amount", "sum"), actual=("spent_amount", "sum"))
     summary["variance"] = summary["budget"] - summary["actual"]
     summary = summary.sort_values("budget", ascending=False)
