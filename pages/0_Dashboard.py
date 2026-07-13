@@ -76,16 +76,37 @@ if sel_cat_labels:
 # ---------------------------------------------------------------------------
 # Headline metrics (recomputed from the filtered set)
 # ---------------------------------------------------------------------------
+from datetime import date as _date
+_now = _date.today()
+_cur_month = _now.month
+_cur_month_name = MONTHS[_cur_month - 1]
+
 total_budget = df["budgeted_amount"].sum()
 total_spent = df["spent_amount"].sum()
-total_planned = df["planned_amount"].sum() if "planned_amount" in df else 0
 total_remaining = total_budget - total_spent
 pct_spent = (total_spent / total_budget * 100) if total_budget else 0
+
+# Month-level figures (only meaningful when viewing the current year)
+viewing_current_year = (fiscal_year == _now.year)
+month_df = df[df["month"] == _cur_month] if "month" in df.columns else df.iloc[0:0]
+prev_df = df[df["month"] == (_cur_month - 1)] if _cur_month > 1 and "month" in df.columns else df.iloc[0:0]
+spent_this_month = month_df["spent_amount"].sum() if viewing_current_year else 0
+spent_prev_month = prev_df["spent_amount"].sum() if viewing_current_year else 0
+budget_this_month = month_df["budgeted_amount"].sum() if viewing_current_year else 0
+mom_delta = spent_this_month - spent_prev_month
 
 c1, c2, c3, c4 = st.columns(4)
 c1.metric("Budget", f"${total_budget:,.0f}")
 c2.metric("Spent to date", f"${total_spent:,.0f}", f"{pct_spent:.0f}% of budget", delta_color="off")
-c3.metric("Committed / upcoming", f"${total_planned:,.0f}")
+if viewing_current_year:
+    c3.metric(
+        f"Spent in {_cur_month_name}", f"${spent_this_month:,.0f}",
+        (f"{'+' if mom_delta>=0 else ''}${mom_delta:,.0f} vs {MONTHS[_cur_month-2]}"
+         if _cur_month > 1 else None),
+        delta_color="inverse",
+    )
+else:
+    c3.metric("Spent (full year)", f"${total_spent:,.0f}")
 c4.metric("Remaining", f"${total_remaining:,.0f}",
           delta_color="inverse" if total_remaining < 0 else "off")
 
@@ -113,6 +134,58 @@ if over:
         f"Over budget by ${abs(total_remaining):,.0f}.</div>",
         unsafe_allow_html=True,
     )
+
+# ---------------------------------------------------------------------------
+# Key metrics row — derived indicators
+# ---------------------------------------------------------------------------
+st.write("")
+section_label("Key metrics")
+
+# Pace: where spend "should" be if evenly paced through the year so far
+months_elapsed = _cur_month if viewing_current_year else 12
+expected_by_now = total_budget * (months_elapsed / 12)
+pace_delta = total_spent - expected_by_now  # positive = ahead of (over) pace
+
+# Average monthly spend so far (only counting months with any activity, current year)
+if "month" in df.columns:
+    monthly = df.groupby("month")["spent_amount"].sum()
+    active_months = monthly[monthly > 0]
+    avg_monthly = active_months.mean() if len(active_months) else 0
+else:
+    avg_monthly = 0
+
+# This month's budget adherence
+month_pct = (spent_this_month / budget_this_month * 100) if budget_this_month else 0
+
+# Top category this month
+top_cat_name, top_cat_amt = "—", 0
+if viewing_current_year and not month_df.empty:
+    tc = month_df.groupby("name")["spent_amount"].sum().sort_values(ascending=False)
+    tc = tc[tc > 0]
+    if len(tc):
+        top_cat_name, top_cat_amt = tc.index[0], tc.iloc[0]
+
+k1, k2, k3, k4 = st.columns(4)
+with k1:
+    if viewing_current_year:
+        pace_txt = "on pace" if abs(pace_delta) < 0.02 * max(total_budget, 1) else \
+            (f"${abs(pace_delta):,.0f} ahead" if pace_delta > 0 else f"${abs(pace_delta):,.0f} behind")
+        st.metric("Spend pace", pace_txt,
+                  help="Compares spend-to-date against an even spread of the annual budget "
+                       "through the current month. 'Ahead' means spending faster than budgeted.")
+    else:
+        st.metric("Spend pace", "—")
+with k2:
+    st.metric("Avg / active month", f"${avg_monthly:,.0f}",
+              help="Average spend across months that had any activity.")
+with k3:
+    st.metric(f"{_cur_month_name} vs budget",
+              f"{month_pct:.0f}%" if viewing_current_year and budget_this_month else "—",
+              help="This month's spend as a share of this month's budget.")
+with k4:
+    st.metric(f"Top line in {_cur_month_name}" if viewing_current_year else "Top line",
+              top_cat_name,
+              f"${top_cat_amt:,.0f}" if top_cat_amt else None, delta_color="off")
 
 st.write("")
 st.divider()
