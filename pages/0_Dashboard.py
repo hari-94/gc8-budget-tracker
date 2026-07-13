@@ -90,54 +90,65 @@ if sel_cat_labels:
     df = df[df["code"].isin(sel_codes)]
 
 # ---------------------------------------------------------------------------
-# Headline metrics (recomputed from the filtered set)
+# Headline metrics — scoped to the selected month (or the whole year if "All months")
 # ---------------------------------------------------------------------------
-total_budget = df["budgeted_amount"].sum()
-total_spent = df["spent_amount"].sum()
-total_remaining = total_budget - total_spent
-pct_spent = (total_spent / total_budget * 100) if total_budget else 0
-
 if not focus_all:
     _cur_month = focus_month
     _cur_month_name = MONTHS[_cur_month - 1]
     month_df = df[df["month"] == _cur_month] if "month" in df.columns else df.iloc[0:0]
     prev_df = df[df["month"] == (_cur_month - 1)] if _cur_month > 1 and "month" in df.columns else df.iloc[0:0]
-    spent_this_month = month_df["spent_amount"].sum()
+    # Headline figures follow the month
+    scope_budget = month_df["budgeted_amount"].sum()
+    scope_spent = month_df["spent_amount"].sum()
     spent_prev_month = prev_df["spent_amount"].sum()
-    budget_this_month = month_df["budgeted_amount"].sum()
-    mom_delta = spent_this_month - spent_prev_month
+    mom_delta = scope_spent - spent_prev_month
+    scope_label = f"{_cur_month_name} budget"
+    spent_label = f"Spent in {_cur_month_name}"
 else:
     _cur_month = None
     _cur_month_name = "all months"
     month_df = df
-    spent_this_month = total_spent
+    scope_budget = df["budgeted_amount"].sum()
+    scope_spent = df["spent_amount"].sum()
     spent_prev_month = 0
-    budget_this_month = total_budget
     mom_delta = 0
+    scope_label = "Annual budget"
+    spent_label = "Spent to date"
+
+scope_remaining = scope_budget - scope_spent
+pct_spent = (scope_spent / scope_budget * 100) if scope_budget else 0
+
+# keep these names for downstream sections (charts/key-metrics)
+total_budget = scope_budget
+total_spent = scope_spent
+total_remaining = scope_remaining
+spent_this_month = scope_spent
+budget_this_month = scope_budget
 
 c1, c2, c3, c4 = st.columns(4)
-c1.metric("Budget", f"${total_budget:,.0f}")
-c2.metric("Spent to date", f"${total_spent:,.0f}", f"{pct_spent:.0f}% of budget", delta_color="off")
+c1.metric(scope_label, f"${scope_budget:,.0f}")
+c2.metric(spent_label, f"${scope_spent:,.0f}", f"{pct_spent:.0f}% of budget", delta_color="off")
 if not focus_all:
-    # Custom delta so the color is guaranteed: spending LESS than last month = green (good),
-    # spending MORE = red (watch out). Rendered as a caption under the metric value.
     with c3:
-        st.metric(f"Spent in {MONTHS[_cur_month-1]}", f"${spent_this_month:,.0f}")
+        # Month-over-month: show last month's spend with the change indicator
+        st.metric(f"{MONTHS[_cur_month-2] if _cur_month>1 else '—'} spend",
+                  f"${spent_prev_month:,.0f}" if _cur_month > 1 else "—")
         if _cur_month > 1:
             down = mom_delta < 0
             d_color = "#1B7A4B" if down else ("#B44C3C" if mom_delta > 0 else "#8A887E")
             arrow = "▼" if down else ("▲" if mom_delta > 0 else "—")
+            verb = "less than" if down else ("more than" if mom_delta > 0 else "same as")
             st.markdown(
                 f"<div style='margin-top:-0.8rem; font-size:0.8rem; font-weight:600; "
-                f"color:{d_color};'>{arrow} ${abs(mom_delta):,.0f} vs {MONTHS[_cur_month-2]}</div>",
+                f"color:{d_color};'>{arrow} ${abs(mom_delta):,.0f} {verb} last mo.</div>",
                 unsafe_allow_html=True,
             )
 else:
     with c3:
         n_active = int((df.groupby('month')['spent_amount'].sum() > 0).sum()) if 'month' in df.columns else 0
         st.metric("Months with spend", f"{n_active} of 12")
-c4.metric("Remaining", f"${total_remaining:,.0f}",
-          delta_color="inverse" if total_remaining < 0 else "off")
+c4.metric("Remaining", f"${scope_remaining:,.0f}",
+          delta_color="inverse" if scope_remaining < 0 else "off")
 
 util = min(pct_spent, 100)
 over = total_remaining < 0
@@ -147,7 +158,7 @@ st.markdown(
     <div style="margin:0.75rem 0 0.25rem;">
       <div style="display:flex; justify-content:space-between; font-size:0.8rem;
                   color:{INK_FAINT}; margin-bottom:6px;">
-        <span>Budget utilization{' · filtered view' if active else ''}</span>
+        <span>Budget utilization · {('all year' if focus_all else _cur_month_name)}{' · filtered' if active else ''}</span>
         <span style="color:{bar_color}; font-weight:600;">{pct_spent:.1f}%</span>
       </div>
       <div style="height:8px; background:{SAND}; border-radius:99px; overflow:hidden;">
