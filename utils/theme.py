@@ -145,6 +145,10 @@ def inject_theme():
         font-family: 'Fraunces', Georgia, serif !important;
         font-weight: 500;
         color: {INK} !important;
+        font-size: clamp(1.05rem, 1.6vw, 1.6rem) !important;
+        white-space: normal;
+        overflow-wrap: anywhere;
+        line-height: 1.15;
     }}
 
     /* Dataframe */
