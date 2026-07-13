@@ -131,24 +131,36 @@ def inject_theme():
     div[data-testid="stMetric"] {{
         background: #FFFFFF;
         border: 1px solid {LINE};
-        border-radius: 14px;
-        padding: 1.1rem 1.25rem;
+        border-radius: 16px;
+        padding: 1.15rem 1.3rem;
+        box-shadow: 0 1px 2px rgba(26,26,23,0.04), 0 1px 3px rgba(26,26,23,0.03);
+        transition: box-shadow 0.15s ease, transform 0.15s ease;
+        min-height: 118px;
+    }}
+    div[data-testid="stMetric"]:hover {{
+        box-shadow: 0 4px 14px rgba(26,26,23,0.07);
+        transform: translateY(-1px);
     }}
     div[data-testid="stMetric"] label {{
         color: {INK_FAINT} !important;
-        font-size: 0.78rem !important;
-        font-weight: 500 !important;
+        font-size: 0.72rem !important;
+        font-weight: 600 !important;
         text-transform: uppercase;
-        letter-spacing: 0.06em;
+        letter-spacing: 0.07em;
     }}
     div[data-testid="stMetricValue"] {{
         font-family: 'Fraunces', Georgia, serif !important;
         font-weight: 500;
         color: {INK} !important;
-        font-size: clamp(1.05rem, 1.6vw, 1.6rem) !important;
+        font-size: clamp(1.1rem, 1.7vw, 1.7rem) !important;
         white-space: normal;
         overflow-wrap: anywhere;
-        line-height: 1.15;
+        line-height: 1.12;
+        margin-top: 0.15rem;
+    }}
+    div[data-testid="stMetricDelta"] {{
+        font-size: 0.78rem !important;
+        font-weight: 600 !important;
     }}
 
     /* Dataframe */
