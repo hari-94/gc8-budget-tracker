@@ -6,22 +6,35 @@ from utils.theme import (
     style_fig, section_label,
     GREEN, AMBER, CLAY, INK, INK_SOFT, INK_FAINT, LINE, SAND, SERIES,
 )
-from utils.db import get_budget_vs_actual, get_expenses, get_categories
+from utils.db import get_budget_vs_actual, get_expenses, get_categories, get_budget_versions
 
 MONTHS = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"]
 
 # ---------------------------------------------------------------------------
 # Header
 # ---------------------------------------------------------------------------
+# ---------------------------------------------------------------------------
+from datetime import date
+_this_year = date.today().year
+_years = sorted({_this_year, _this_year - 1, _this_year + 1, 2025, 2026, 2027}, reverse=True)
+_default_idx = _years.index(_this_year) if _this_year in _years else 0
+
 head_l, head_r = st.columns([3, 1])
 with head_l:
     section_label("Grand Colorado on Peak 8 · Housekeeping")
     st.title("Budget Overview")
 with head_r:
-    fiscal_year = st.selectbox("Fiscal year", options=[2026, 2025, 2027], index=0,
+    fiscal_year = st.selectbox("Fiscal year", options=_years, index=_default_idx,
                                label_visibility="collapsed")
 
-bva = get_budget_vs_actual(fiscal_year)
+# Budget version — lets you measure actuals against the Original plan or a mid-year revision
+_versions = get_budget_versions(fiscal_year)
+budget_version = "Original"
+if len(_versions) > 1:
+    budget_version = st.radio("Measure against", options=_versions, horizontal=True,
+                              index=_versions.index("Original") if "Original" in _versions else 0)
+
+bva = get_budget_vs_actual(fiscal_year, budget_version)
 exp_bva_all = bva[bva["type"] == "expense"].copy() if not bva.empty else pd.DataFrame()
 
 if exp_bva_all.empty:
