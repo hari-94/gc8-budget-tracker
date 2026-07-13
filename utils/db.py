@@ -62,10 +62,23 @@ def vendor_usage_count(name: str) -> int:
 # ---------------------------------------------------------------------------
 
 @st.cache_data(ttl=120)
-def get_budget_vs_actual(fiscal_year: int) -> pd.DataFrame:
+def get_budget_vs_actual(fiscal_year: int, version: str = "Original") -> pd.DataFrame:
     client = get_client()
-    res = client.table("v_budget_vs_actual").select("*").eq("fiscal_year", fiscal_year).execute()
-    return pd.DataFrame(res.data)
+    q = client.table("v_budget_vs_actual").select("*").eq("fiscal_year", fiscal_year)
+    # Only filter by version if the column exists (post-migration); fall back gracefully.
+    try:
+        res = q.eq("version", version).execute()
+        df = pd.DataFrame(res.data)
+        if df.empty and version != "Original":
+            return df
+        if df.empty:
+            # maybe pre-migration data with no version column
+            res2 = client.table("v_budget_vs_actual").select("*").eq("fiscal_year", fiscal_year).execute()
+            return pd.DataFrame(res2.data)
+        return df
+    except Exception:
+        res = q.execute()
+        return pd.DataFrame(res.data)
 
 
 @st.cache_data(ttl=120)
@@ -77,15 +90,17 @@ def get_dashboard_summary(fiscal_year: int) -> dict:
     return {"total_budget": 0, "total_spent": 0, "total_planned": 0, "total_remaining": 0}
 
 
-def upsert_budget_allocation(category_code, fiscal_year, month, amount, user_id):
+def upsert_budget_allocation(category_code, fiscal_year, month, amount, user_id, version="Original"):
     client = get_authed_client()
     client.table("budget_allocations").upsert({
         "category_code": category_code,
         "fiscal_year": fiscal_year,
         "month": month,
         "budgeted_amount": amount,
+        "version": version,
         "updated_by": user_id,
-    }, on_conflict="category_code,fiscal_year,month").execute()
+    }, on_conflict="category_code,fiscal_year,month,version").execute()
+    st.cache_data.clear()
 
 
 def copy_budget_year(from_year, to_year) -> int:
@@ -102,6 +117,27 @@ def get_budget_years() -> list:
     res = client.table("budget_allocations").select("fiscal_year").execute()
     years = sorted({r["fiscal_year"] for r in res.data}, reverse=True)
     return years
+
+
+@st.cache_data(ttl=60)
+def get_budget_versions(fiscal_year: int) -> list:
+    client = get_client()
+    try:
+        res = client.rpc("budget_versions", {"p_year": fiscal_year}).execute()
+        vers = [r["version"] for r in res.data] if res.data else []
+        return vers or ["Original"]
+    except Exception:
+        return ["Original"]
+
+
+def create_budget_revision(fiscal_year, source_version, new_version, from_month) -> int:
+    client = get_authed_client()
+    res = client.rpc("create_budget_revision", {
+        "p_year": fiscal_year, "p_source_version": source_version,
+        "p_new_version": new_version, "p_from_month": from_month,
+    }).execute()
+    st.cache_data.clear()
+    return res.data if isinstance(res.data, int) else 0
 
 
 # ---------------------------------------------------------------------------
