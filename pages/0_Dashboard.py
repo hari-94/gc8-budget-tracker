@@ -170,23 +170,28 @@ if over:
 st.write("")
 section_label("Key metrics")
 
-# Pace: where spend "should" be if evenly paced through the year up to the focus month
-months_elapsed = _cur_month if not focus_all else 12
-expected_by_now = total_budget * (months_elapsed / 12)
-pace_delta = total_spent - expected_by_now  # positive = ahead of (over) pace
+# Per-category budget vs actual for the current scope (focus month or whole year)
+cat_perf = (month_df.groupby(["code", "name"], as_index=False)
+            .agg(budget=("budgeted_amount", "sum"), spent=("spent_amount", "sum")))
+cat_perf["over"] = cat_perf["spent"] - cat_perf["budget"]
 
-# Average monthly spend (only counting months with any activity)
-if "month" in df.columns:
-    monthly = df.groupby("month")["spent_amount"].sum()
-    active_months = monthly[monthly > 0]
-    avg_monthly = active_months.mean() if len(active_months) else 0
+# Metric 1: how many categories are over budget (only those with a budget set)
+budgeted = cat_perf[cat_perf["budget"] > 0]
+n_over = int((budgeted["over"] > 0).sum())
+n_budgeted = int(len(budgeted))
+
+# Metric 2: the single biggest overspend (category furthest over its budget)
+over_only = budgeted[budgeted["over"] > 0].sort_values("over", ascending=False)
+if len(over_only):
+    worst = over_only.iloc[0]
+    worst_name, worst_over = worst["name"], worst["over"]
 else:
-    avg_monthly = 0
+    worst_name, worst_over = None, 0
 
-# Budget adherence for the focus scope
+# Budget adherence for the scope
 month_pct = (spent_this_month / budget_this_month * 100) if budget_this_month else 0
 
-# Top category in the focus scope
+# Top category by spend in the scope
 top_cat_name, top_cat_amt = "—", 0
 if not month_df.empty:
     tc = month_df.groupby("name")["spent_amount"].sum().sort_values(ascending=False)
@@ -195,20 +200,36 @@ if not month_df.empty:
         top_cat_name, top_cat_amt = tc.index[0], tc.iloc[0]
 
 def _short(name, n=22):
-    return name if len(name) <= n else name[:n - 1].rstrip() + "…"
+    return name if not name or len(name) <= n else name[:n - 1].rstrip() + "…"
 
 _scope_word = "year" if focus_all else MONTHS[_cur_month - 1]
 
 k1, k2, k3, k4 = st.columns(4)
 with k1:
-    pace_txt = "on pace" if abs(pace_delta) < 0.02 * max(total_budget, 1) else \
-        (f"${abs(pace_delta):,.0f} over" if pace_delta > 0 else f"${abs(pace_delta):,.0f} under")
-    st.metric("Spend pace", pace_txt,
-              help="Compares spend-to-date against an even spread of the annual budget. "
-                   "'Over' means spending faster than budgeted, 'under' means slower.")
+    with st.container():
+        st.metric("Over budget",
+                  f"{n_over} of {n_budgeted}" if n_budgeted else "—",
+                  help="Number of budgeted categories whose actual spend exceeds their "
+                       "budget for the selected scope.")
+        # colored context line
+        if n_budgeted:
+            oc = "#B44C3C" if n_over else "#1B7A4B"
+            msg = "all within budget" if n_over == 0 else f"{n_over} need attention"
+            st.markdown(f"<div style='margin-top:-0.8rem; font-size:0.78rem; "
+                        f"font-weight:600; color:{oc};'>{msg}</div>", unsafe_allow_html=True)
 with k2:
-    st.metric("Avg / active month", f"${avg_monthly:,.0f}",
-              help="Average spend across months that had any activity.")
+    with st.container():
+        st.metric("Biggest overspend",
+                  _short(worst_name) if worst_name else "None",
+                  help="The category furthest over its budget for the selected scope.")
+        if worst_name:
+            st.markdown(f"<div style='margin-top:-0.8rem; font-size:0.78rem; "
+                        f"font-weight:600; color:#B44C3C;'>▲ ${worst_over:,.0f} over</div>",
+                        unsafe_allow_html=True)
+        else:
+            st.markdown("<div style='margin-top:-0.8rem; font-size:0.78rem; "
+                        "font-weight:600; color:#1B7A4B;'>nothing over budget</div>",
+                        unsafe_allow_html=True)
 with k3:
     st.metric(f"{_scope_word.capitalize()} vs budget",
               f"{month_pct:.0f}%" if budget_this_month else "—",
