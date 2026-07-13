@@ -6,7 +6,7 @@ from utils.theme import (
     style_fig, section_label,
     GREEN, AMBER, CLAY, INK, INK_SOFT, INK_FAINT, LINE, SAND, SERIES,
 )
-from utils.db import get_budget_vs_actual, get_expenses, get_categories, get_budget_versions
+from utils.db import get_budget_vs_actual, get_expenses, get_categories
 
 MONTHS = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"]
 
@@ -28,14 +28,13 @@ with head_r:
                                label_visibility="collapsed")
 
 # Budget version — lets you measure actuals against the Original plan or a mid-year revision
-_versions = get_budget_versions(fiscal_year)
-budget_version = "Original"
-if len(_versions) > 1:
-    budget_version = st.radio("Measure against", options=_versions, horizontal=True,
-                              index=_versions.index("Original") if "Original" in _versions else 0)
-
-bva = get_budget_vs_actual(fiscal_year, budget_version)
+bva = get_budget_vs_actual(fiscal_year)
 exp_bva_all = bva[bva["type"] == "expense"].copy() if not bva.empty else pd.DataFrame()
+
+# Drop archived categories so the dashboard only reflects actively-tracked lines
+if not exp_bva_all.empty:
+    active_codes = set(get_categories()["code"].tolist())
+    exp_bva_all = exp_bva_all[exp_bva_all["code"].isin(active_codes)]
 
 if exp_bva_all.empty:
     st.info("No budget data for this fiscal year yet.")
