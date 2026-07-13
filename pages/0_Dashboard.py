@@ -199,46 +199,71 @@ if not month_df.empty:
     if len(tc):
         top_cat_name, top_cat_amt = tc.index[0], tc.iloc[0]
 
-def _short(name, n=22):
+def _short(name, n=26):
     return name if not name or len(name) <= n else name[:n - 1].rstrip() + "…"
 
 _scope_word = "year" if focus_all else MONTHS[_cur_month - 1]
 
+def _subtitle(text, color="#8A887E"):
+    st.markdown(f"<div style='margin-top:-0.8rem; font-size:0.78rem; font-weight:600; "
+                f"color:{color}; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;'>"
+                f"{text}</div>", unsafe_allow_html=True)
+
 k1, k2, k3, k4 = st.columns(4)
 with k1:
-    with st.container():
-        st.metric("Over budget",
-                  f"{n_over} of {n_budgeted}" if n_budgeted else "—",
-                  help="Number of budgeted categories whose actual spend exceeds their "
-                       "budget for the selected scope.")
-        # colored context line
-        if n_budgeted:
-            oc = "#B44C3C" if n_over else "#1B7A4B"
-            msg = "all within budget" if n_over == 0 else f"{n_over} need attention"
-            st.markdown(f"<div style='margin-top:-0.8rem; font-size:0.78rem; "
-                        f"font-weight:600; color:{oc};'>{msg}</div>", unsafe_allow_html=True)
-with k2:
-    with st.container():
-        st.metric("Biggest overspend",
-                  _short(worst_name) if worst_name else "None",
-                  help="The category furthest over its budget for the selected scope.")
-        if worst_name:
-            st.markdown(f"<div style='margin-top:-0.8rem; font-size:0.78rem; "
-                        f"font-weight:600; color:#B44C3C;'>▲ ${worst_over:,.0f} over</div>",
-                        unsafe_allow_html=True)
+    st.metric("Over budget",
+              f"{n_over} of {n_budgeted}" if n_budgeted else "—",
+              help="Number of budgeted categories whose actual spend exceeds their "
+                   "budget for the selected scope.")
+    if n_budgeted:
+        if n_over:
+            _subtitle(f"{n_over} need attention", "#B44C3C")
         else:
-            st.markdown("<div style='margin-top:-0.8rem; font-size:0.78rem; "
-                        "font-weight:600; color:#1B7A4B;'>nothing over budget</div>",
-                        unsafe_allow_html=True)
+            _subtitle("all within budget", "#1B7A4B")
+with k2:
+    # Headline = the dollar amount over (always fits); subtitle = which category
+    if worst_name:
+        st.metric("Biggest overspend", f"${worst_over:,.0f}",
+                  help="How much the most-over category exceeds its budget for the scope.")
+        _subtitle(f"▲ {_short(worst_name)}", "#B44C3C")
+    else:
+        st.metric("Biggest overspend", "$0",
+                  help="No category is over budget for the selected scope.")
+        _subtitle("nothing over budget", "#1B7A4B")
 with k3:
     st.metric(f"{_scope_word.capitalize()} vs budget",
               f"{month_pct:.0f}%" if budget_this_month else "—",
               help="Spend as a share of budget for the selected scope.")
 with k4:
-    st.metric(f"Top line · {_scope_word}",
-              _short(top_cat_name),
-              f"${top_cat_amt:,.0f}" if top_cat_amt else None, delta_color="off",
-              help=top_cat_name if top_cat_name != "—" else None)
+    # Headline = the dollar spent (always fits); subtitle = which category
+    if top_cat_amt:
+        st.metric(f"Top line · {_scope_word}", f"${top_cat_amt:,.0f}",
+                  help="Highest-spend category for the selected scope.")
+        _subtitle(_short(top_cat_name))
+    else:
+        st.metric(f"Top line · {_scope_word}", "—")
+
+# Expandable breakdown of which categories are over budget
+if n_over:
+    with st.expander(f"See the {n_over} categor{'y' if n_over==1 else 'ies'} over budget", expanded=False):
+        ob = over_only.copy()
+        ob["pct_over"] = (ob["over"] / ob["budget"] * 100).round(0)
+        ob_display = ob.rename(columns={
+            "name": "Category", "budget": "Budget", "spent": "Actual",
+            "over": "Over by", "pct_over": "% over",
+        })[["Category", "Budget", "Actual", "Over by", "% over"]]
+        st.dataframe(
+            ob_display, hide_index=True, use_container_width=True,
+            column_config={
+                "Budget": st.column_config.NumberColumn(format="$%.0f"),
+                "Actual": st.column_config.NumberColumn(format="$%.0f"),
+                "Over by": st.column_config.NumberColumn(format="$%.0f"),
+                "% over": st.column_config.NumberColumn(format="%.0f%%"),
+            },
+        )
+        st.caption(f"Scope: {'full year' if focus_all else MONTHS[_cur_month-1]} {fiscal_year}"
+                   f"{' · filtered' if active else ''}. "
+                   "'Over by' is actual spend minus budget.")
 
 st.write("")
 st.divider()
