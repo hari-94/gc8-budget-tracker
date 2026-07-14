@@ -7,6 +7,8 @@ from utils.theme import (
     GREEN, AMBER, CLAY, INK, INK_SOFT, INK_FAINT, LINE, SAND, SERIES,
 )
 from utils.db import get_budget_vs_actual, get_expenses, get_categories
+from utils.report import build_report
+from utils.auth import current_username
 
 MONTHS = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"]
 
@@ -275,6 +277,65 @@ if n_over:
         st.caption(f"Scope: {'full year' if focus_all else MONTHS[_cur_month-1]} {fiscal_year}"
                    f"{' · filtered' if active else ''}. "
                    "'Over by' is actual spend minus budget.")
+
+# ---------------------------------------------------------------------------
+# PDF report download
+# ---------------------------------------------------------------------------
+st.write("")
+_scope_label = "Full Year" if focus_all else _MONTHS_FULL[_cur_month - 1]
+
+# Assemble the data payload for the report from the current scope (month_df)
+_perf = (month_df.groupby(["code", "name"], as_index=False)
+         .agg(budget=("budgeted_amount", "sum"), spent=("spent_amount", "sum")))
+_perf["over"] = _perf["spent"] - _perf["budget"]
+
+_over_rows = []
+for _, r in _perf[(_perf["budget"] > 0) & (_perf["over"] > 0)].sort_values("over", ascending=False).iterrows():
+    _over_rows.append((r["name"], r["budget"], r["spent"], r["over"],
+                       r["over"] / r["budget"] * 100 if r["budget"] else 0))
+
+_top_rows = []
+for _, r in _perf.sort_values("spent", ascending=False).head(12).iterrows():
+    if r["spent"] > 0:
+        _top_rows.append((r["name"], r["budget"], r["spent"], r["budget"] - r["spent"]))
+
+_group_rows = []
+if "group_name" in month_df.columns:
+    _g = month_df.groupby("group_name", as_index=False)["spent_amount"].sum()
+    _g = _g[_g["spent_amount"] > 0].sort_values("spent_amount", ascending=False)
+    _group_rows = [(row["group_name"], row["spent_amount"]) for _, row in _g.iterrows()]
+
+_report_data = {
+    "budget": float(total_budget), "spent": float(total_spent),
+    "remaining": float(total_remaining), "pct": float(pct_spent),
+    "over_rows": _over_rows, "top_rows": _top_rows, "group_rows": _group_rows,
+    "n_over": int(n_over), "n_budgeted": int(n_budgeted),
+    "top_name": None if top_cat_name == "—" else top_cat_name,
+    "top_amt": float(top_cat_amt) if top_cat_amt else 0,
+    "worst_name": worst_name, "worst_over": float(worst_over) if worst_over else 0,
+    "spent_prev": float(spent_prev_month) if not focus_all else None,
+    "prev_month_name": (_MONTHS_FULL[_cur_month - 2] if (not focus_all and _cur_month > 1) else None),
+}
+
+_rc1, _rc2 = st.columns([1, 3])
+with _rc1:
+    if st.button("Generate PDF report", use_container_width=True):
+        try:
+            pdf_bytes = build_report(_scope_label, fiscal_year, current_username(), _report_data)
+            st.session_state["report_pdf"] = pdf_bytes
+            st.session_state["report_name"] = (
+                f"GC8_Budget_{_scope_label.replace(' ', '')}_{fiscal_year}.pdf")
+        except Exception as e:
+            st.error(f"Couldn't build the report: {e}")
+with _rc2:
+    if st.session_state.get("report_pdf"):
+        st.download_button(
+            "Download report", data=st.session_state["report_pdf"],
+            file_name=st.session_state.get("report_name", "GC8_Budget_Report.pdf"),
+            mime="application/pdf", use_container_width=False,
+        )
+st.caption("The report covers the currently selected year, month, and filters, "
+           "with headline figures, over-budget findings, and written observations.")
 
 st.write("")
 st.divider()
