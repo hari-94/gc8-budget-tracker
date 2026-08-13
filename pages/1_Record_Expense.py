@@ -71,30 +71,42 @@ st.markdown(
 )
 st.write("")
 
+# If we just saved, clear the input widgets by dropping their session keys
+# BEFORE those widgets are instantiated below.
+if st.session_state.pop("clear_form", False):
+    for k in ("f_cat", "f_newvendor", "f_vendor_new", "f_vendor_pick",
+              "f_invoice", "f_amount", "f_status", "f_notes"):
+        st.session_state.pop(k, None)
+
 col1, col2 = st.columns(2)
 with col1:
-    cat_label = st.selectbox("Category", options=list(cat_options.keys()))
-    add_new_vendor = st.toggle("Add a vendor that isn't in the list yet")
+    cat_label = st.selectbox("Category", options=list(cat_options.keys()),
+                             index=None, placeholder="Choose a category", key="f_cat")
+    add_new_vendor = st.toggle("Add a vendor that isn't in the list yet", key="f_newvendor")
     if add_new_vendor:
-        vendor = st.text_input("New vendor name", placeholder="Type the vendor's name")
+        vendor = st.text_input("New vendor name", placeholder="Type the vendor's name",
+                               key="f_vendor_new")
     else:
         if vendors:
             vendor = st.selectbox("Vendor", options=vendors, index=None,
-                                  placeholder="Choose a vendor")
+                                  placeholder="Choose a vendor", key="f_vendor_pick")
         else:
             vendor = None
             st.caption("No vendors on file yet — switch on the toggle above to add the first one.")
-    invoice_number = st.text_input("Invoice number", placeholder="Leave blank for NA")
+    invoice_number = st.text_input("Invoice number", placeholder="Leave blank for NA",
+                                   key="f_invoice")
 with col2:
-    txn_date = st.date_input("Date", value=date.today())
-    amount = st.number_input("Amount", min_value=0.0, step=1.0, format="%.2f")
+    txn_date = st.date_input("Date", value=date.today(), key="f_date")
+    amount = st.number_input("Amount", min_value=0.0, step=1.0, format="%.2f", key="f_amount")
     status = st.selectbox(
         "Status", options=["paid", "pending", "planned"],
         format_func=lambda s: {"paid": "Paid", "pending": "Pending payment",
                                "planned": "Planned / upcoming"}[s],
+        key="f_status",
     )
 
-notes = st.text_area("Notes", placeholder="Optional context — approval, dispute, reason for the cost")
+notes = st.text_area("Notes", placeholder="Optional context — approval, dispute, reason for the cost",
+                     key="f_notes")
 
 # Normalize invoice to NA when blank
 inv_clean = (invoice_number or "").strip() or "NA"
@@ -137,6 +149,7 @@ if st.button(label, type="primary", use_container_width=True):
             )
             st.stop()
         st.session_state["force_dup"] = False
+        st.session_state["clear_form"] = True
         success_animation(f"Recorded ${amount:,.2f}")
         st.rerun()
 
