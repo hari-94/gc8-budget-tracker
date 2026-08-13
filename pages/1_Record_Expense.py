@@ -77,6 +77,7 @@ if st.session_state.pop("clear_form", False):
     for k in ("f_cat", "f_newvendor", "f_vendor_new", "f_vendor_pick",
               "f_invoice", "f_amount", "f_status", "f_notes"):
         st.session_state.pop(k, None)
+    success_animation(st.session_state.pop("saved_msg", "Recorded"))
 
 col1, col2 = st.columns(2)
 with col1:
@@ -150,7 +151,7 @@ if st.button(label, type="primary", use_container_width=True):
             st.stop()
         st.session_state["force_dup"] = False
         st.session_state["clear_form"] = True
-        success_animation(f"Recorded ${amount:,.2f}")
+        st.session_state["saved_msg"] = f"Recorded ${amount:,.2f}"
         st.rerun()
 
 # ---------------------------------------------------------------------------
