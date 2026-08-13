@@ -71,43 +71,44 @@ st.markdown(
 )
 st.write("")
 
-# If we just saved, clear the input widgets by dropping their session keys
-# BEFORE those widgets are instantiated below.
+# Each successful save bumps this counter, which is appended to every input's
+# key. New keys => Streamlit treats the inputs as brand-new empty widgets,
+# reliably clearing the form.
 if st.session_state.pop("clear_form", False):
-    for k in ("f_cat", "f_newvendor", "f_vendor_new", "f_vendor_pick",
-              "f_invoice", "f_amount", "f_status", "f_notes"):
-        st.session_state.pop(k, None)
+    st.session_state["form_seq"] = st.session_state.get("form_seq", 0) + 1
     success_animation(st.session_state.pop("saved_msg", "Recorded"))
+
+_seq = st.session_state.get("form_seq", 0)
 
 col1, col2 = st.columns(2)
 with col1:
     cat_label = st.selectbox("Category", options=list(cat_options.keys()),
-                             index=None, placeholder="Choose a category", key="f_cat")
-    add_new_vendor = st.toggle("Add a vendor that isn't in the list yet", key="f_newvendor")
+                             index=None, placeholder="Choose a category", key=f"f_cat_{_seq}")
+    add_new_vendor = st.toggle("Add a vendor that isn't in the list yet", key=f"f_newvendor_{_seq}")
     if add_new_vendor:
         vendor = st.text_input("New vendor name", placeholder="Type the vendor's name",
-                               key="f_vendor_new")
+                               key=f"f_vendor_new_{_seq}")
     else:
         if vendors:
             vendor = st.selectbox("Vendor", options=vendors, index=None,
-                                  placeholder="Choose a vendor", key="f_vendor_pick")
+                                  placeholder="Choose a vendor", key=f"f_vendor_pick_{_seq}")
         else:
             vendor = None
             st.caption("No vendors on file yet — switch on the toggle above to add the first one.")
     invoice_number = st.text_input("Invoice number", placeholder="Leave blank for NA",
-                                   key="f_invoice")
+                                   key=f"f_invoice_{_seq}")
 with col2:
-    txn_date = st.date_input("Date", value=date.today(), key="f_date")
-    amount = st.number_input("Amount", min_value=0.0, step=1.0, format="%.2f", key="f_amount")
+    txn_date = st.date_input("Date", value=date.today(), key=f"f_date_{_seq}")
+    amount = st.number_input("Amount", min_value=0.0, step=1.0, format="%.2f", key=f"f_amount_{_seq}")
     status = st.selectbox(
         "Status", options=["paid", "pending", "planned"],
         format_func=lambda s: {"paid": "Paid", "pending": "Pending payment",
                                "planned": "Planned / upcoming"}[s],
-        key="f_status",
+        key=f"f_status_{_seq}",
     )
 
 notes = st.text_area("Notes", placeholder="Optional context — approval, dispute, reason for the cost",
-                     key="f_notes")
+                     key=f"f_notes_{_seq}")
 
 # Normalize invoice to NA when blank
 inv_clean = (invoice_number or "").strip() or "NA"
