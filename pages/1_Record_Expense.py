@@ -99,7 +99,16 @@ with col1:
                                    key=f"f_invoice_{_seq}")
 with col2:
     txn_date = st.date_input("Date", value=date.today(), key=f"f_date_{_seq}")
-    amount = st.number_input("Amount", min_value=0.0, step=1.0, format="%.2f", key=f"f_amount_{_seq}")
+    txn_type = st.radio(
+        "Type", options=["Expense", "Credit"], horizontal=True, key=f"f_type_{_seq}",
+        help="Choose Credit for money returned to you — a refund, rebate, or vendor "
+             "credit. Enter the amount as a positive number; it will subtract from the "
+             "category total.",
+    )
+    is_credit = (txn_type == "Credit")
+    amount = st.number_input(
+        "Credit amount" if is_credit else "Amount",
+        min_value=0.0, step=1.0, format="%.2f", key=f"f_amount_{_seq}")
     status = st.selectbox(
         "Status", options=["paid", "pending", "planned"],
         format_func=lambda s: {"paid": "Paid", "pending": "Pending payment",
@@ -115,7 +124,9 @@ inv_clean = (invoice_number or "").strip() or "NA"
 
 st.write("")
 force = st.session_state.get("force_dup", False)
-label = "Record anyway" if force else "Record expense"
+_verb = "Record credit" if is_credit else "Record expense"
+label = "Record anyway" if force else _verb
+signed_amount = -amount if is_credit else amount
 if st.button(label, type="primary", use_container_width=True):
     code = cat_options.get(cat_label)
     if amount <= 0:
@@ -125,34 +136,37 @@ if st.button(label, type="primary", use_container_width=True):
     elif not vendor:
         st.error("Choose an existing vendor, or switch on the toggle to add a new one.")
     else:
-        # Duplicate guard
-        dup = expense_exists(code, txn_date, amount, vendor, inv_clean)
+        # Duplicate guard (uses the signed amount so a credit and an expense of the
+        # same size aren't treated as the same row)
+        dup = expense_exists(code, txn_date, signed_amount, vendor, inv_clean)
         if dup and not force:
             st.session_state["force_dup"] = True
+            _kind = "credit" if is_credit else "expense"
             st.warning(
-                f"This looks like a duplicate — a **{cat_label}** expense of "
+                f"This looks like a duplicate — a **{cat_label}** {_kind} of "
                 f"**${amount:,.2f}** to **{vendor}** on **{txn_date}** "
                 f"(invoice {inv_clean}) is already recorded. "
-                "If it's genuinely a separate charge, press **Record anyway**."
+                "If it's genuinely separate, press **Record anyway**."
             )
             st.stop()
         try:
             add_expense(
                 category_code=code, vendor=vendor.strip(),
-                invoice_number=inv_clean, txn_date=txn_date, amount=amount,
+                invoice_number=inv_clean, txn_date=txn_date, amount=signed_amount,
                 status=status, notes=notes, user_id=current_username(), device=get_device(),
             )
         except ValueError:
             # Blocked by the database dedup guard
             st.session_state["force_dup"] = False
             st.error(
-                "This exact expense is already recorded, so it wasn't added again. "
-                "If it's genuinely a separate charge, change the invoice number to tell them apart."
+                "This exact entry is already recorded, so it wasn't added again. "
+                "If it's genuinely separate, change the invoice number to tell them apart."
             )
             st.stop()
         st.session_state["force_dup"] = False
         st.session_state["clear_form"] = True
-        st.session_state["saved_msg"] = f"Recorded ${amount:,.2f}"
+        st.session_state["saved_msg"] = (
+            f"Credit of ${amount:,.2f} recorded" if is_credit else f"Recorded ${amount:,.2f}")
         st.rerun()
 
 # ---------------------------------------------------------------------------
