@@ -104,7 +104,8 @@ with tab_edit:
         with st.form(f"edit_form_{expense_id}"):
             c1, c2 = st.columns(2)
             with c1:
-                new_amount = st.number_input("Amount", value=float(row["amount"]), min_value=0.0, format="%.2f")
+                new_amount = st.number_input("Amount", value=float(row["amount"]), format="%.2f",
+                                             help="Negative values represent credits/refunds.")
                 new_status = st.selectbox("Status", options=["paid", "pending", "planned"],
                                            index=["paid", "pending", "planned"].index(row["status"]))
                 new_vendor = st.text_input("Vendor", value=row.get("vendor") or "")
