@@ -94,14 +94,14 @@ create policy "notes_write_open" on public.expense_notes for all using (true) wi
 -- profiles/auth.users are no longer used for login, but leaving the old table alone is harmless.
 
 -- ---------------------------------------------------------------------------
--- 5. Seed your team's logins (change these passwords after first login!)
+-- 5. Create logins
 -- ---------------------------------------------------------------------------
-select public.upsert_app_user('hari',    'Har@123', 'Hari',         'admin');
-select public.upsert_app_user('jazmin',  'Jaz@123', 'Jazmin',       'editor');
-select public.upsert_app_user('liz',     'Liz@123', 'Liz Salazar',  'editor');
-select public.upsert_app_user('rigo',    'Rig@123', 'Rigo Garcia',  'editor');
-
--- ============================================================================
--- To add/change a user later, just re-run:
---   select public.upsert_app_user('username', 'newpassword', 'Full Name', 'editor');
+-- NEVER put real passwords in this file - the repo is shared. Run statements
+-- like the one below directly in the Supabase SQL Editor (not saved here), or
+-- add/reset users from the app's "Team and access" page.
+--
+--   select public.upsert_app_user('<username>', '<strong password>', '<Full Name>', 'editor');
+--
+-- Roles: 'admin' | 'editor' | 'viewer'. Re-running for an existing username
+-- resets that user's password and role.
 -- ============================================================================

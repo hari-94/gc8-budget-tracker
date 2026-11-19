@@ -18,9 +18,8 @@ budget_app/
 │   └── auth.py                  # Login/session/role handling
 ├── import_data/
 │   ├── extract_from_excel.py    # Converts your workbook into import-ready CSVs
-│   ├── budget_allocations.csv   # ✅ already generated from your file (1,104 rows)
-│   ├── expenses.csv             # ✅ already generated from your file (699 rows)
-│   └── extra_categories.csv     # ✅ 5 one-off codes found in the log, not in Budget_26
+│   └── *.csv / insert_*.sql     # generated data files - kept LOCAL only (gitignored,
+│                                #   they contain real financial data)
 ├── supabase_schema.sql          # Run this once in Supabase SQL Editor
 ├── requirements.txt
 └── .streamlit/secrets.toml.example

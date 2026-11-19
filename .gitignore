@@ -3,3 +3,9 @@ __pycache__/
 *.pyc
 .venv/
 venv/
+
+# Real financial data - keep local only, never commit
+import_data/*.csv
+import_data/insert_*.sql
+*.xls
+*.xlsx
