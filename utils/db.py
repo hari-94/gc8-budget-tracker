@@ -219,6 +219,52 @@ def add_expense(category_code, vendor, invoice_number, txn_date, amount, status,
     st.cache_data.clear()
 
 
+def get_expenses_in_range(date_from, date_to) -> list:
+    """Uncached - live rows for duplicate checks right before an import is saved."""
+    client = get_client()
+    res = client.table("expenses") \
+        .select("id,txn_date,category_code,amount,vendor,invoice_number,notes,created_by") \
+        .is_("deleted_at", "null") \
+        .gte("txn_date", str(date_from)).lte("txn_date", str(date_to)) \
+        .limit(5000).execute()
+    return res.data or []
+
+
+def add_expenses_bulk(rows: list, user_id, device=None, source="") -> int:
+    """Insert many expenses in one request (all-or-nothing). Each row needs
+    category_code, vendor, invoice_number, txn_date, amount, status, notes."""
+    if not rows:
+        return 0
+    client = get_authed_client()
+    payload = [{
+        "category_code": r["category_code"],
+        "vendor": r["vendor"],
+        "invoice_number": r.get("invoice_number") or "NA",
+        "txn_date": str(r["txn_date"]),
+        "amount": r["amount"],
+        "status": r.get("status", "paid"),
+        "notes": r.get("notes") or "",
+        "created_by": user_id,
+        "updated_by": user_id,
+        "created_device": device,
+        "updated_device": device,
+    } for r in rows]
+    try:
+        client.table("expenses").insert(payload).execute()
+    except Exception as e:
+        msg = str(e).lower()
+        if "uq_expenses_no_dupes" in msg or "duplicate key" in msg or "unique" in msg:
+            raise ValueError("DUPLICATE") from e
+        raise
+    for v in sorted({r["vendor"].strip() for r in rows if r.get("vendor")}):
+        add_vendor_if_new(v)
+    total = sum(r["amount"] for r in rows)
+    log_activity(user_id, "import_expense_report", device,
+                 f"{len(rows)} rows ${total:,.2f} {source}".strip())
+    st.cache_data.clear()
+    return len(rows)
+
+
 def update_expense(expense_id, fields: dict, user_id, device=None):
     client = get_authed_client()
     fields["updated_by"] = user_id

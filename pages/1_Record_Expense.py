@@ -5,6 +5,7 @@ from datetime import date
 from utils.auth import require_login, logout_button, can_edit, current_username
 from utils.theme import inject_theme, section_label, GREEN, INK_FAINT
 from utils.helpers import get_device
+from utils.import_ui import render_report_import
 from utils.db import (get_categories, get_vendors, add_expense, expense_exists,
                       delete_vendor, vendor_usage_count)
 
@@ -65,109 +66,117 @@ def success_animation(message):
     ph.empty()
 
 
-st.markdown(
-    "Record money already spent, an invoice awaiting payment, or an upcoming cost "
-    "you want to reserve budget for."
-)
-st.write("")
+tab_single, tab_import = st.tabs(["Single expense", "Import expense report"])
 
-# Each successful save bumps this counter, which is appended to every input's
-# key. New keys => Streamlit treats the inputs as brand-new empty widgets,
-# reliably clearing the form.
-if st.session_state.pop("clear_form", False):
-    st.session_state["form_seq"] = st.session_state.get("form_seq", 0) + 1
-    success_animation(st.session_state.pop("saved_msg", "Recorded"))
+# Rendered first: the single-entry form below can call st.stop(), which would
+# otherwise prevent this tab from drawing.
+with tab_import:
+    render_report_import(categories, vendors)
 
-_seq = st.session_state.get("form_seq", 0)
+with tab_single:
+    st.markdown(
+        "Record money already spent, an invoice awaiting payment, or an upcoming cost "
+        "you want to reserve budget for."
+    )
+    st.write("")
 
-col1, col2 = st.columns(2)
-with col1:
-    cat_label = st.selectbox("Category", options=list(cat_options.keys()),
-                             index=None, placeholder="Choose a category", key=f"f_cat_{_seq}")
-    add_new_vendor = st.toggle("Add a vendor that isn't in the list yet", key=f"f_newvendor_{_seq}")
-    if add_new_vendor:
-        vendor = st.text_input("New vendor name", placeholder="Type the vendor's name",
-                               key=f"f_vendor_new_{_seq}")
-    else:
-        if vendors:
-            vendor = st.selectbox("Vendor", options=vendors, index=None,
-                                  placeholder="Choose a vendor", key=f"f_vendor_pick_{_seq}")
+    # Each successful save bumps this counter, which is appended to every input's
+    # key. New keys => Streamlit treats the inputs as brand-new empty widgets,
+    # reliably clearing the form.
+    if st.session_state.pop("clear_form", False):
+        st.session_state["form_seq"] = st.session_state.get("form_seq", 0) + 1
+        success_animation(st.session_state.pop("saved_msg", "Recorded"))
+
+    _seq = st.session_state.get("form_seq", 0)
+
+    col1, col2 = st.columns(2)
+    with col1:
+        cat_label = st.selectbox("Category", options=list(cat_options.keys()),
+                                 index=None, placeholder="Choose a category", key=f"f_cat_{_seq}")
+        add_new_vendor = st.toggle("Add a vendor that isn't in the list yet", key=f"f_newvendor_{_seq}")
+        if add_new_vendor:
+            vendor = st.text_input("New vendor name", placeholder="Type the vendor's name",
+                                   key=f"f_vendor_new_{_seq}")
         else:
-            vendor = None
-            st.caption("No vendors on file yet — switch on the toggle above to add the first one.")
-    invoice_number = st.text_input("Invoice number", placeholder="Leave blank for NA",
-                                   key=f"f_invoice_{_seq}")
-with col2:
-    txn_date = st.date_input("Date", value=date.today(), key=f"f_date_{_seq}")
-    txn_type = st.radio(
-        "Type", options=["Expense", "Credit"], horizontal=True, key=f"f_type_{_seq}",
-        help="Choose Credit for money returned to you — a refund, rebate, or vendor "
-             "credit. Enter the amount as a positive number; it will subtract from the "
-             "category total.",
-    )
-    is_credit = (txn_type == "Credit")
-    amount = st.number_input(
-        "Credit amount" if is_credit else "Amount",
-        min_value=0.0, step=1.0, format="%.2f", key=f"f_amount_{_seq}")
-    status = st.selectbox(
-        "Status", options=["paid", "pending", "planned"],
-        format_func=lambda s: {"paid": "Paid", "pending": "Pending payment",
-                               "planned": "Planned / upcoming"}[s],
-        key=f"f_status_{_seq}",
-    )
+            if vendors:
+                vendor = st.selectbox("Vendor", options=vendors, index=None,
+                                      placeholder="Choose a vendor", key=f"f_vendor_pick_{_seq}")
+            else:
+                vendor = None
+                st.caption("No vendors on file yet — switch on the toggle above to add the first one.")
+        invoice_number = st.text_input("Invoice number", placeholder="Leave blank for NA",
+                                       key=f"f_invoice_{_seq}")
+    with col2:
+        txn_date = st.date_input("Date", value=date.today(), key=f"f_date_{_seq}")
+        txn_type = st.radio(
+            "Type", options=["Expense", "Credit"], horizontal=True, key=f"f_type_{_seq}",
+            help="Choose Credit for money returned to you — a refund, rebate, or vendor "
+                 "credit. Enter the amount as a positive number; it will subtract from the "
+                 "category total.",
+        )
+        is_credit = (txn_type == "Credit")
+        amount = st.number_input(
+            "Credit amount" if is_credit else "Amount",
+            min_value=0.0, step=1.0, format="%.2f", key=f"f_amount_{_seq}")
+        status = st.selectbox(
+            "Status", options=["paid", "pending", "planned"],
+            format_func=lambda s: {"paid": "Paid", "pending": "Pending payment",
+                                   "planned": "Planned / upcoming"}[s],
+            key=f"f_status_{_seq}",
+        )
 
-notes = st.text_area("Notes", placeholder="Optional context — approval, dispute, reason for the cost",
-                     key=f"f_notes_{_seq}")
+    notes = st.text_area("Notes", placeholder="Optional context — approval, dispute, reason for the cost",
+                         key=f"f_notes_{_seq}")
 
-# Normalize invoice to NA when blank
-inv_clean = (invoice_number or "").strip() or "NA"
+    # Normalize invoice to NA when blank
+    inv_clean = (invoice_number or "").strip() or "NA"
 
-st.write("")
-force = st.session_state.get("force_dup", False)
-_verb = "Record credit" if is_credit else "Record expense"
-label = "Record anyway" if force else _verb
-signed_amount = -amount if is_credit else amount
-if st.button(label, type="primary", use_container_width=True):
-    code = cat_options.get(cat_label)
-    if amount <= 0:
-        st.error("Enter an amount greater than zero.")
-    elif not cat_label:
-        st.error("Choose a category.")
-    elif not vendor:
-        st.error("Choose an existing vendor, or switch on the toggle to add a new one.")
-    else:
-        # Duplicate guard (uses the signed amount so a credit and an expense of the
-        # same size aren't treated as the same row)
-        dup = expense_exists(code, txn_date, signed_amount, vendor, inv_clean)
-        if dup and not force:
-            st.session_state["force_dup"] = True
-            _kind = "credit" if is_credit else "expense"
-            st.warning(
-                f"This looks like a duplicate — a **{cat_label}** {_kind} of "
-                f"**${amount:,.2f}** to **{vendor}** on **{txn_date}** "
-                f"(invoice {inv_clean}) is already recorded. "
-                "If it's genuinely separate, press **Record anyway**."
-            )
-            st.stop()
-        try:
-            add_expense(
-                category_code=code, vendor=vendor.strip(),
-                invoice_number=inv_clean, txn_date=txn_date, amount=signed_amount,
-                status=status, notes=notes, user_id=current_username(), device=get_device(),
-            )
-        except ValueError:
-            # Blocked by the database dedup guard
+    st.write("")
+    force = st.session_state.get("force_dup", False)
+    _verb = "Record credit" if is_credit else "Record expense"
+    label = "Record anyway" if force else _verb
+    signed_amount = -amount if is_credit else amount
+    if st.button(label, type="primary", use_container_width=True):
+        code = cat_options.get(cat_label)
+        if amount <= 0:
+            st.error("Enter an amount greater than zero.")
+        elif not cat_label:
+            st.error("Choose a category.")
+        elif not vendor:
+            st.error("Choose an existing vendor, or switch on the toggle to add a new one.")
+        else:
+            # Duplicate guard (uses the signed amount so a credit and an expense of the
+            # same size aren't treated as the same row)
+            dup = expense_exists(code, txn_date, signed_amount, vendor, inv_clean)
+            if dup and not force:
+                st.session_state["force_dup"] = True
+                _kind = "credit" if is_credit else "expense"
+                st.warning(
+                    f"This looks like a duplicate — a **{cat_label}** {_kind} of "
+                    f"**${amount:,.2f}** to **{vendor}** on **{txn_date}** "
+                    f"(invoice {inv_clean}) is already recorded. "
+                    "If it's genuinely separate, press **Record anyway**."
+                )
+                st.stop()
+            try:
+                add_expense(
+                    category_code=code, vendor=vendor.strip(),
+                    invoice_number=inv_clean, txn_date=txn_date, amount=signed_amount,
+                    status=status, notes=notes, user_id=current_username(), device=get_device(),
+                )
+            except ValueError:
+                # Blocked by the database dedup guard
+                st.session_state["force_dup"] = False
+                st.error(
+                    "This exact entry is already recorded, so it wasn't added again. "
+                    "If it's genuinely separate, change the invoice number to tell them apart."
+                )
+                st.stop()
             st.session_state["force_dup"] = False
-            st.error(
-                "This exact entry is already recorded, so it wasn't added again. "
-                "If it's genuinely separate, change the invoice number to tell them apart."
-            )
-            st.stop()
-        st.session_state["force_dup"] = False
-        st.session_state["clear_form"] = True
-        st.session_state["saved_msg"] = (
-            f"Credit of ${amount:,.2f} recorded" if is_credit else f"Recorded ${amount:,.2f}")
-        st.rerun()
+            st.session_state["clear_form"] = True
+            st.session_state["saved_msg"] = (
+                f"Credit of ${amount:,.2f} recorded" if is_credit else f"Recorded ${amount:,.2f}")
+            st.rerun()
 
 # ---------------------------------------------------------------------------
 # Manage vendors — remove ones added by mistake or no longer used

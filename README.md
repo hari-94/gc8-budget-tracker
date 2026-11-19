@@ -82,6 +82,27 @@ streamlit run app.py
 
 New sign-ups default to **viewer** — promote them from the Admin page.
 
+## Importing Emburse expense reports
+
+**Record expense → Import expense report** takes the monthly Emburse export (`.xls`/`.xlsx`;
+several files at once is fine) and adds only the purchases not already recorded.
+
+- Line items come from the report's **Details** section (date, amount, category, department,
+  reimbursable), enriched with vendor + description from **Expense Comments**. Sections are found
+  by their headings, so it doesn't matter how many category rows the weekly grids have. The sum
+  of the lines is checked against *Total Company Expenses*.
+- Category = account number + department, e.g. `75000-Meals-Prop Mgmt` in `P8P-570-…` → `75000-570`.
+- A line counts as **already recorded** when an expense with the same date, category and amount
+  exists (vendor/invoice are ignored, since manual entries spell vendors differently). Each recorded
+  row covers one line only, so two identical purchases need two rows. Re-uploading a report adds nothing.
+- **Possible duplicates** (same category + amount within 3 days, or same day + amount in another
+  category) are shown unticked for a person to decide.
+- Raw card vendors are mapped to existing vendors (`AMAZON MARK` → `Amazon`); notes get a
+  `[Emburse Sep 2026 - Employee Name]` tag.
+
+Code: `utils/expense_report.py` (parsing/matching, no Streamlit), `utils/import_ui.py` (the tab).
+Tests: `python -m pytest tests`.
+
 ---
 
 ## Feature brainstorm (beyond what's built)
