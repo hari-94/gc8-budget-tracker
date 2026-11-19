@@ -151,29 +151,42 @@ def render_report_import(categories: pd.DataFrame, vendors: list[str]):
     c2.metric("New", n_new)
     c3.metric("Possible duplicates", n_pos)
 
+    money = {"Amount": st.column_config.NumberColumn(format="$%.2f")}
+
     if recorded:
-        with st.expander(f"Already recorded ({len(recorded)}) - will be skipped"):
+        with st.expander(f"Already recorded ({len(recorded)}) - will be skipped",
+                         expanded=not rows):
             st.dataframe(pd.DataFrame(recorded), hide_index=True, use_container_width=True,
-                         column_config={"Amount": st.column_config.NumberColumn(format="$%.2f")})
+                         column_config=money)
 
     if not rows:
         st.success("Everything on this report is already recorded. Nothing to add.")
         return
 
+    # ---------------------------------------------------------------------------
+    # Step 1 - review. Nothing is saved until step 2 is confirmed.
+    # ---------------------------------------------------------------------------
+    pending_key = f"imp_pending_{seq}"
+    pending = st.session_state.get(pending_key)
+
+    st.markdown("#### Step 1 · Review the lines to add")
+    st.caption("Tick **Approve** for each line you want captured. You can change the category, "
+               "vendor or notes before approving. Nothing is saved until you confirm in step 2.")
     if n_pos:
         st.caption("**Possible duplicates** look like something already recorded (same amount "
-                   "within a few days, or same day in another category). They're unticked; tick "
-                   "one only if it's a separate purchase.")
+                   "within a few days, or same day in another category). They start unticked; "
+                   "approve one only if it's a separate purchase.")
 
-    df = pd.DataFrame(rows)
+    df = pd.DataFrame(rows).rename(columns={"Add": "Approve"})
     editor_key = "imp_editor_" + hashlib.sha1(
         ("|".join(sorted(seen.values())) + str(seq)).encode()).hexdigest()[:12]
     edited = st.data_editor(
         df.drop(columns=["_src"]),
         key=editor_key, hide_index=True, use_container_width=True,
-        disabled=["Status", "Date", "Amount", "Similar recorded entry"],
+        # Locked while waiting for confirmation, so what's confirmed is what's saved.
+        disabled=True if pending else ["Status", "Date", "Amount", "Similar recorded entry"],
         column_config={
-            "Add": st.column_config.CheckboxColumn(width="small"),
+            "Approve": st.column_config.CheckboxColumn(width="small"),
             "Status": st.column_config.TextColumn(width="small"),
             "Date": st.column_config.DateColumn(format="MM/DD/YYYY", width="small"),
             "Category": st.column_config.SelectboxColumn(
@@ -185,43 +198,68 @@ def render_report_import(categories: pd.DataFrame, vendors: list[str]):
         },
     )
 
-    chosen = edited[edited["Add"]]
+    chosen = edited[edited["Approve"]]
     total = float(chosen["Amount"].sum()) if len(chosen) else 0.0
-    st.write("")
-    if not st.button(f"Add {len(chosen)} expense{'s' if len(chosen) != 1 else ''} "
-                     f"(${total:,.2f})", type="primary", use_container_width=True,
-                     disabled=chosen.empty, key=f"imp_save_{seq}"):
+    plural = "s" if len(chosen) != 1 else ""
+
+    if not pending:
+        st.write("")
+        if st.button(f"Review {len(chosen)} approved line{plural} (${total:,.2f})",
+                     type="primary", use_container_width=True, disabled=chosen.empty,
+                     key=f"imp_review_{seq}"):
+            missing_cat = chosen[chosen["Category"].isna()
+                                 | ~chosen["Category"].isin(label_to_code)]
+            if len(missing_cat):
+                st.error("Choose a category for every approved line "
+                         f"({len(missing_cat)} line(s) have none - their account isn't in the app).")
+                return
+            if (chosen["Vendor"].fillna("").str.strip() == "").any():
+                st.error("Every approved line needs a vendor.")
+                return
+            st.session_state[pending_key] = [{
+                "category_code": label_to_code[r["Category"]],
+                "vendor": r["Vendor"].strip(),
+                "invoice_number": "NA",
+                "txn_date": r["Date"],
+                "amount": round(float(r["Amount"]), 2),
+                "status": "paid",
+                "notes": (r["Notes"] or "").strip(),
+            } for _, r in chosen.iterrows()]
+            st.rerun()
         return
 
-    # ---- Validate ----
-    missing_cat = chosen[chosen["Category"].isna() | ~chosen["Category"].isin(label_to_code)]
-    if len(missing_cat):
-        st.error("Choose a category for every ticked row "
-                 f"({len(missing_cat)} row(s) have none - their account isn't in the app).")
-        return
-    if (chosen["Vendor"].fillna("").str.strip() == "").any():
-        st.error("Every ticked row needs a vendor.")
+    # ---------------------------------------------------------------------------
+    # Step 2 - confirm exactly what will be written.
+    # ---------------------------------------------------------------------------
+    p_total = sum(r["amount"] for r in pending)
+    p_plural = "s" if len(pending) != 1 else ""
+    st.markdown("#### Step 2 · Confirm")
+    st.info(f"**{len(pending)} expense{p_plural} totalling ${p_total:,.2f}** will be added to "
+            f"the app as **paid**, recorded by **{current_username()}**. Please check them below.")
+    st.dataframe(pd.DataFrame([{
+        "Date": r["txn_date"], "Category": code_to_label.get(r["category_code"], r["category_code"]),
+        "Vendor": r["vendor"], "Amount": r["amount"], "Notes": r["notes"],
+    } for r in pending]), hide_index=True, use_container_width=True, column_config=money)
+
+    b1, b2 = st.columns(2)
+    with b1:
+        confirm = st.button(f"Confirm and add {len(pending)} expense{p_plural}", type="primary",
+                            use_container_width=True, key=f"imp_confirm_{seq}")
+    with b2:
+        if st.button("Go back and change", use_container_width=True, key=f"imp_back_{seq}"):
+            st.session_state.pop(pending_key, None)
+            st.rerun()
+    if not confirm:
         return
 
     # ---- Final duplicate check against live data (another user may have just added
     #      these, or the button was pressed twice) ----
-    to_add = []
-    for idx, r in chosen.iterrows():
-        to_add.append({
-            "category_code": label_to_code[r["Category"]],
-            "vendor": r["Vendor"].strip(),
-            "invoice_number": "NA",
-            "txn_date": r["Date"],
-            "amount": round(float(r["Amount"]), 2),
-            "status": "paid",
-            "notes": (r["Notes"] or "").strip(),
-        })
     fresh = get_expenses_in_range(lo, hi)
     probe = [replace(items[0][1], txn_date=r["txn_date"], category_code=r["category_code"],
-                     amount=r["amount"]) for r in to_add]
+                     amount=r["amount"]) for r in pending]
     fresh_res = compare_with_existing(probe, fresh)
-    final = [r for r, fr in zip(to_add, fresh_res) if fr["status"] != RECORDED]
-    skipped = len(to_add) - len(final)
+    final = [r for r, fr in zip(pending, fresh_res) if fr["status"] != RECORDED]
+    skipped = len(pending) - len(final)
 
     user, device = current_username(), get_device()
     source = ", ".join(sorted({_report_label(r) for r in reports}))
@@ -239,6 +277,7 @@ def render_report_import(categories: pd.DataFrame, vendors: list[str]):
     msg = f"Added {added} expense{'s' if added != 1 else ''} from {source}."
     if skipped:
         msg += f" {skipped} skipped because they were already recorded."
+    st.session_state.pop(pending_key, None)
     st.session_state["imp_done_msg"] = msg
     st.session_state["imp_seq"] = seq + 1
     st.rerun()

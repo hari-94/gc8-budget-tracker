@@ -66,14 +66,16 @@ def success_animation(message):
     ph.empty()
 
 
-tab_single, tab_import = st.tabs(["Single expense", "Import expense report"])
+# A radio (not st.tabs) so the chosen screen survives reruns: st.tabs snaps back to
+# the first tab whenever the page redraws, e.g. right after a file is uploaded.
+_IMPORT = "Import expense report"
+mode = st.radio("Entry method", ["Single expense", _IMPORT], horizontal=True,
+                key="record_mode", label_visibility="collapsed")
+st.write("")
 
-# Rendered first: the single-entry form below can call st.stop(), which would
-# otherwise prevent this tab from drawing.
-with tab_import:
+if mode == _IMPORT:
     render_report_import(categories, vendors)
-
-with tab_single:
+else:
     st.markdown(
         "Record money already spent, an invoice awaiting payment, or an upcoming cost "
         "you want to reserve budget for."
