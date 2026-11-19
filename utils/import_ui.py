@@ -12,10 +12,10 @@ import pandas as pd
 import streamlit as st
 
 from utils.auth import current_username
-from utils.db import add_expenses_bulk, get_expenses_in_range
+from utils.db import add_expenses_bulk, expense_extra_columns, get_expenses_in_range
 from utils.expense_report import (
     NEW, POSSIBLE, RECORDED, ReportParseError, compare_with_existing, date_window,
-    normalize_vendor, parse_expense_report, resolve_categories,
+    normalize_vendor, parse_expense_report, resolve_categories, suggest_category,
 )
 from utils.helpers import get_device
 
@@ -112,7 +112,9 @@ def render_report_import(categories: pd.DataFrame, vendors: list[str]):
             f"**{_report_label(rep)}** ({rep.report_name or rep.file_name}) · "
             f"{rep.employee or 'Unknown employee'}"
             f"{' · ' + period if period else ''}  \n"
-            f"{len(rep.items)} lines · ${rep.items_total:,.2f} {check}")
+            f"{len(rep.items)} lines · ${rep.items_total:,.2f} {check}"
+            + (f" · approval code {rep.approval_code}" if rep.approval_code else "")
+            + (f" · [receipts in Emburse]({rep.receipt_url})" if rep.receipt_url else ""))
         for w in rep.warnings:
             st.warning(w)
 
@@ -123,7 +125,8 @@ def render_report_import(categories: pd.DataFrame, vendors: list[str]):
     existing = get_expenses_in_range(lo, hi)
     results = compare_with_existing([it for _, it in items], existing)
 
-    rows, recorded = [], []
+    extra_cols = expense_extra_columns()
+    rows, extras, recorded = [], [], []
     for (rep, it), res in zip(items, results):
         if res["status"] == RECORDED:
             recorded.append({
@@ -132,11 +135,21 @@ def render_report_import(categories: pd.DataFrame, vendors: list[str]):
                 "Recorded as": _describe(res["match"], code_to_label),
             })
             continue
+        sugg = suggest_category(it.reason, it.category_code, all_codes)
+        extras.append({
+            "invoice_number": f"Emburse {rep.approval_code}" if rep.approval_code else "NA",
+            "spent_by": rep.employee or None,
+            "location": it.location or None,
+            "receipt_url": rep.receipt_url or None,
+            "suggested": sugg,
+        })
         rows.append({
             "Add": res["status"] == NEW,
             "Status": _STATUS_LABEL[res["status"]],
             "Date": it.txn_date,
             "Category": code_to_label.get(it.category_code),
+            "Use suggested": False,
+            "Suggested category": code_to_label.get(sugg, "") if sugg else "",
             "Vendor": normalize_vendor(it.vendor_raw, vendors),
             "Amount": it.amount,
             "Notes": _notes_for(it, rep),
@@ -172,6 +185,10 @@ def render_report_import(categories: pd.DataFrame, vendors: list[str]):
     st.markdown("#### Step 1 · Review the lines to add")
     st.caption("Tick **Approve** for each line you want captured. You can change the category, "
                "vendor or notes before approving. Nothing is saved until you confirm in step 2.")
+    n_sugg = sum(bool(r["Suggested category"]) for r in rows)
+    if n_sugg:
+        st.caption(f"**{n_sugg} line(s) have a suggested category** based on the reason. Tick "
+                   "**Use suggested** to file a line there instead of the Emburse category.")
     if n_pos:
         st.caption("**Possible duplicates** look like something already recorded (same amount "
                    "within a few days, or same day in another category). They start unticked; "
@@ -184,13 +201,19 @@ def render_report_import(categories: pd.DataFrame, vendors: list[str]):
         df.drop(columns=["_src"]),
         key=editor_key, hide_index=True, use_container_width=True,
         # Locked while waiting for confirmation, so what's confirmed is what's saved.
-        disabled=True if pending else ["Status", "Date", "Amount", "Similar recorded entry"],
+        disabled=True if pending else ["Status", "Date", "Amount", "Suggested category",
+                                       "Similar recorded entry"],
         column_config={
             "Approve": st.column_config.CheckboxColumn(width="small"),
             "Status": st.column_config.TextColumn(width="small"),
             "Date": st.column_config.DateColumn(format="MM/DD/YYYY", width="small"),
             "Category": st.column_config.SelectboxColumn(
                 options=sorted(code_to_label.values()), required=True, width="medium"),
+            "Use suggested": st.column_config.CheckboxColumn(
+                width="small", help="Tick to file this line under the suggested category instead."),
+            "Suggested category": st.column_config.TextColumn(
+                width="medium", help="A more specific app category suggested by the reason text. "
+                "Emburse's category is what accounting charged, so it stays the default."),
             "Vendor": st.column_config.TextColumn(required=True, width="medium"),
             "Amount": st.column_config.NumberColumn(format="$%.2f", width="small"),
             "Notes": st.column_config.TextColumn(width="large"),
@@ -207,6 +230,10 @@ def render_report_import(categories: pd.DataFrame, vendors: list[str]):
         if st.button(f"Review {len(chosen)} approved line{plural} (${total:,.2f})",
                      type="primary", use_container_width=True, disabled=chosen.empty,
                      key=f"imp_review_{seq}"):
+            # Apply "Use suggested" before validating
+            chosen = chosen.copy()
+            use = chosen["Use suggested"] & (chosen["Suggested category"] != "")
+            chosen.loc[use, "Category"] = chosen.loc[use, "Suggested category"]
             missing_cat = chosen[chosen["Category"].isna()
                                  | ~chosen["Category"].isin(label_to_code)]
             if len(missing_cat):
@@ -216,15 +243,23 @@ def render_report_import(categories: pd.DataFrame, vendors: list[str]):
             if (chosen["Vendor"].fillna("").str.strip() == "").any():
                 st.error("Every approved line needs a vendor.")
                 return
-            st.session_state[pending_key] = [{
-                "category_code": label_to_code[r["Category"]],
-                "vendor": r["Vendor"].strip(),
-                "invoice_number": "NA",
-                "txn_date": r["Date"],
-                "amount": round(float(r["Amount"]), 2),
-                "status": "paid",
-                "notes": (r["Notes"] or "").strip(),
-            } for _, r in chosen.iterrows()]
+            pend = []
+            for idx, r in chosen.iterrows():
+                ex = extras[idx]
+                row = {
+                    "category_code": label_to_code[r["Category"]],
+                    "vendor": r["Vendor"].strip(),
+                    "invoice_number": ex["invoice_number"],
+                    "txn_date": r["Date"],
+                    "amount": round(float(r["Amount"]), 2),
+                    "status": "paid",
+                    "notes": (r["Notes"] or "").strip(),
+                }
+                if extra_cols:
+                    row.update(spent_by=ex["spent_by"], location=ex["location"],
+                               receipt_url=ex["receipt_url"])
+                pend.append(row)
+            st.session_state[pending_key] = pend
             st.rerun()
         return
 
@@ -238,7 +273,9 @@ def render_report_import(categories: pd.DataFrame, vendors: list[str]):
             f"the app as **paid**, recorded by **{current_username()}**. Please check them below.")
     st.dataframe(pd.DataFrame([{
         "Date": r["txn_date"], "Category": code_to_label.get(r["category_code"], r["category_code"]),
-        "Vendor": r["vendor"], "Amount": r["amount"], "Notes": r["notes"],
+        "Vendor": r["vendor"], "Amount": r["amount"], "Invoice #": r["invoice_number"],
+        **({"Spent by": r.get("spent_by"), "Location": r.get("location")} if extra_cols else {}),
+        "Notes": r["notes"],
     } for r in pending]), hide_index=True, use_container_width=True, column_config=money)
 
     b1, b2 = st.columns(2)

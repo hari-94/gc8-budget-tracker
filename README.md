@@ -98,7 +98,16 @@ several files at once is fine) and adds only the purchases not already recorded.
 - **Possible duplicates** (same category + amount within 3 days, or same day + amount in another
   category) are shown unticked for a person to decide.
 - Raw card vendors are mapped to existing vendors (`AMAZON MARK` → `Amazon`); notes get a
-  `[Emburse Sep 2026 - Employee Name]` tag.
+  `[Emburse Sep 2026 - Employee Name]` tag; the invoice # is the report's approval code
+  (`Emburse 14838`).
+- Nothing is saved until the reviewer approves lines (step 1) and confirms the final list (step 2).
+- **Suggested category:** Emburse offers only a few accounts, so keywords in the reason suggest a
+  more specific app category (e.g. "HSP Spiff" under Entertainment → Employee Incentive). It's a
+  hint only — tick *Use suggested* to apply it; the Emburse category stays the default because
+  that's what accounting charged.
+- After running `migration_expense_report_fields.sql`, imports also store **Spent by** (the report's
+  employee), **Location** and the **Receipt** link (Emburse receipts + approval trail), shown in
+  Transactions.
 
 Code: `utils/expense_report.py` (parsing/matching, no Streamlit), `utils/import_ui.py` (the tab).
 Tests: `python -m pytest tests`.

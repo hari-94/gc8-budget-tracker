@@ -10,7 +10,7 @@ import pytest
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from utils.expense_report import (  # noqa: E402
     NEW, POSSIBLE, RECORDED, ReportItem, ReportParseError, compare_with_existing,
-    normalize_vendor, parse_expense_report, resolve_categories,
+    normalize_vendor, parse_expense_report, resolve_categories, suggest_category,
 )
 
 
@@ -21,6 +21,10 @@ def _report_bytes(lines, total=None, extra_week_rows=0):
     rows = [
         ["Employee Information"],
         ["Name", "Pat Example (Direct Deposit)", "Email", "x@example.com"],
+        ["Company", "Example Co", "Employee ID", "EX123"],
+        [],
+        ["Approval History"],
+        ["11/6/2026", "Approval Code: 14837 "],
         [],
         ["Statement Information"],
         ["Expense Report Name", "Test Report", "Start Date", "9/1/2026"],
@@ -42,7 +46,7 @@ def _report_bytes(lines, total=None, extra_week_rows=0):
               "Exp Type", "Category", "Department"]]
     rows += [[d, a if r else "", "" if r else a, "USD", "Yes" if r else "No", "No",
               "Cash Expense", c, "P8P-570-GC8 Housekeeping"] for d, c, a, _, r in lines]
-    rows += [[], ["Receipt Report Link: https://example.invalid"]]
+    rows += [[], ["Receipt Report Link: https://pro.emburse.app/RR.aspx?i=TEST&s=1"]]
     for r in rows:
         ws.append(r)
     buf = io.BytesIO()
@@ -62,7 +66,10 @@ CODES = ["73400-570", "74690-570", "75030-570", "75000-570"]
 def test_parses_lines_regardless_of_row_positions(extra):
     rep = parse_expense_report(_report_bytes(LINES, extra_week_rows=extra), "r.xlsx")
     resolve_categories(rep, CODES)
-    assert rep.employee == "Pat Example"
+    assert rep.employee == "Pat Example" and rep.employee_id == "EX123"
+    assert rep.approval_code == "14837"
+    assert rep.receipt_url == "https://pro.emburse.app/RR.aspx?i=TEST&s=1"
+    assert rep.items[2].location == "Here"
     assert rep.start_date == date(2026, 9, 1) and rep.end_date == date(2026, 9, 30)
     assert [(i.txn_date, i.category_code, i.amount) for i in rep.items] == [
         (date(2026, 9, 9), "73400-570", 49.27),
@@ -135,3 +142,22 @@ def test_exact_match_beats_earlier_near_match():
 def test_vendor_normalisation(raw, expected):
     known = ["Amazon", "Costco", "Robbies", "Dos chiles", "Zoro", "City Market", "N/A"]
     assert normalize_vendor(raw, known) == expected
+
+
+ALL_CODES = ["73400-570", "73600-570", "74910-570", "75030-570", "75050-570", "72550-570",
+             "73820-570", "75000-570", "71750-570"]
+
+
+@pytest.mark.parametrize("reason,code,expected", [
+    ("Adventures ATV's HSP Spiff", "75030-570", "75050-570"),
+    ("Office supplies", "73400-570", "74910-570"),
+    ("Kids Booster guest special request items", "72550-570", "73820-570"),
+    ("Spares for vacuums", "73400-570", "73600-570"),
+    ("Ismael Birthday", "75000-570", None),          # meals stay meals
+    ("Houseperson lunch spiff", "75000-570", None),  # spiff rule only applies to Entertainment
+    ("Office supplies", "74910-570", None),          # already in the suggested category
+    ("Compost bags", "72550-570", None),             # 'comp' must be a whole word
+    ("", "73400-570", None),
+])
+def test_suggest_category(reason, code, expected):
+    assert suggest_category(reason, code, ALL_CODES) == expected

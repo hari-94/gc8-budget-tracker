@@ -57,7 +57,11 @@ table = expenses.rename(columns={
     "category_code": "Code", "category": "Category", "txn_date": "Date",
     "vendor": "Vendor", "invoice_number": "Invoice #", "amount": "Amount",
     "status": "Status", "notes": "Notes",
-})[["Date", "Code", "Category", "Vendor", "Invoice #", "Amount", "Status", "Notes"]]
+    "spent_by": "Spent by", "location": "Location", "receipt_url": "Receipt",
+})
+# Spent by / Location / Receipt exist once migration_expense_report_fields.sql has run
+_extra = [c for c in ("Spent by", "Location", "Receipt") if c in table.columns]
+table = table[["Date", "Code", "Category", "Vendor", "Invoice #", "Amount", "Status", "Notes"] + _extra]
 
 # Excel export (includes Code column)
 with top_r:
@@ -76,6 +80,7 @@ st.dataframe(
     column_config={
         "Amount": st.column_config.NumberColumn(format="$%.2f"),
         "Code": st.column_config.TextColumn(width="small"),
+        "Receipt": st.column_config.LinkColumn(display_text="Open"),
     },
 )
 

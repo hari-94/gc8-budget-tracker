@@ -230,13 +230,29 @@ def get_expenses_in_range(date_from, date_to) -> list:
     return res.data or []
 
 
+@st.cache_data(ttl=600)
+def expense_extra_columns() -> bool:
+    """True once migration_expense_report_fields.sql has been run
+    (expenses.spent_by / location / receipt_url exist)."""
+    try:
+        get_client().table("expenses").select("spent_by,location,receipt_url").limit(1).execute()
+        return True
+    except Exception:
+        return False
+
+
+_EXTRA_FIELDS = ("spent_by", "location", "receipt_url")
+
+
 def add_expenses_bulk(rows: list, user_id, device=None, source="") -> int:
     """Insert many expenses in one request (all-or-nothing). Each row needs
-    category_code, vendor, invoice_number, txn_date, amount, status, notes."""
+    category_code, vendor, invoice_number, txn_date, amount, status, notes, and may
+    carry spent_by / location / receipt_url (only sent when present)."""
     if not rows:
         return 0
     client = get_authed_client()
     payload = [{
+        **{k: r[k] for k in _EXTRA_FIELDS if k in r},
         "category_code": r["category_code"],
         "vendor": r["vendor"],
         "invoice_number": r.get("invoice_number") or "NA",

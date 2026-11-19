@@ -50,6 +50,9 @@ class ExpenseReport:
     file_name: str
     report_name: str = ""
     employee: str = ""
+    employee_id: str = ""
+    approval_code: str = ""     # one per report - used as the invoice number
+    receipt_url: str = ""       # Emburse receipt report (all receipts + approval trail)
     department: str = ""
     start_date: date | None = None
     end_date: date | None = None
@@ -297,6 +300,14 @@ def parse_expense_report(data: bytes, file_name: str = "report.xls") -> ExpenseR
     rep.status = _text(_value_right_of(grid, "Status"))
     emp = _text(_value_right_of(grid, "Name"))
     rep.employee = re.sub(r"\s*\(.*?\)\s*$", "", emp)
+    rep.employee_id = _text(_value_right_of(grid, "Employee ID"))
+    for row in grid:
+        for v in row:
+            t = _text(v)
+            if not rep.approval_code and (m := re.match(r"approval code:\s*(\S+)", t, re.I)):
+                rep.approval_code = m.group(1)
+            if not rep.receipt_url and (m := re.search(r"https?://\S*emburse\S*", t, re.I)):
+                rep.receipt_url = m.group(0)
     rep.report_total = _parse_amount(_value_right_of(grid, "Total Company Expenses"))
     rep.disapproved_total = _parse_amount(_value_right_of(grid, "Disapproved Expenses")) or 0.0
 
@@ -476,3 +487,40 @@ def compare_with_existing(items: list[ReportItem], existing: list[dict],
 def date_window(items: list[ReportItem], pad_days: int = 3) -> tuple[date, date]:
     ds = [i.txn_date for i in items]
     return min(ds) - timedelta(days=pad_days), max(ds) + timedelta(days=pad_days)
+
+
+# ---------------------------------------------------------------------------
+# Category suggestions
+# ---------------------------------------------------------------------------
+# Emburse only offers a handful of accounts, so purchases are sometimes filed under
+# the nearest one. These rules suggest a more specific app category from the
+# reason text. They are hints for the reviewer only - the Emburse category is what
+# accounting actually charged, so it stays the default.
+# (pattern, account it applies to or None for any, suggested account)
+_SUGGEST_RULES = [
+    (r"\bspiff|incentive|gift card|prize|award", ("75030",), "75050"),
+    (r"office suppl", None, "74910"),
+    (r"uniform|\bshoes\b|\bpants\b|\bshirts?\b|jacket", None, "71750"),
+    (r"guest (special )?request|\bcomp\b|complimentary", ("72550", "72800"), "73820"),
+    (r"\brepairs?\b|\bspares?\b|replacement part|\bparts\b", ("73400",), "73600"),
+    (r"common area", ("72500",), "72520"),
+    (r"common area", ("72550",), "72560"),
+]
+
+
+def suggest_category(reason: str, current_code: str | None, category_codes: list[str]) -> str | None:
+    """App category code the reason suggests, or None if it agrees with the current one."""
+    if not reason or not current_code:
+        return None
+    text = reason.lower()
+    account, _, dept = current_code.partition("-")
+    codes = set(category_codes)
+    for pattern, applies_to, target in _SUGGEST_RULES:
+        if applies_to and account not in applies_to:
+            continue
+        if target == account or not re.search(pattern, text):
+            continue
+        cand = f"{target}-{dept}" if dept else target
+        if cand in codes:
+            return cand
+    return None
