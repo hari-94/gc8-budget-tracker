@@ -75,6 +75,7 @@ def render_report_import(categories: pd.DataFrame, vendors: list[str]):
     code_to_label = dict(zip(exp_cats["code"], exp_cats["name"] + "  (" + exp_cats["code"] + ")"))
     label_to_code = {v: k for k, v in code_to_label.items()}
     all_codes = list(categories["code"])
+    code_to_name = dict(zip(categories["code"], categories["name"]))
 
     # ---- Parse every file; drop files that are the same report uploaded twice ----
     reports, seen = [], {}
@@ -95,7 +96,7 @@ def render_report_import(categories: pd.DataFrame, vendors: list[str]):
             continue
         seen[ident] = f.name
         rep = replace(rep, items=[replace(i) for i in rep.items])  # don't mutate the cache
-        resolve_categories(rep, all_codes)
+        resolve_categories(rep, all_codes, code_to_name)
         reports.append(rep)
 
     reports = [r for r in reports if r.items]

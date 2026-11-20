@@ -81,6 +81,33 @@ def test_parses_lines_regardless_of_row_positions(extra):
     assert rep.total_matches and not rep.warnings
 
 
+TRAVEL_NAMES = {"75100-570": "Travel & Lodging", "75100-570-LDG": "Lodging",
+                "75100-570-MIL": "Mileage", "75050-570": "Employee Incentive",
+                "73400-570": "Housekeeping Tools"}
+
+
+def test_travel_sub_lines_resolve_by_emburse_name():
+    lines = [
+        ("10/2/2026", "75100-Lodging", 189.00, "Marriott", False),
+        ("10/3/2026", "75100-Mileage", 42.21, "Mileage", True),
+        ("10/4/2026", "75100-Travel & Lodging-Prop Mgmt", 25.00, "Parking", False),
+        ("10/5/2026", "75100-Airfare", 300.00, "United", False),   # unknown name -> main line
+        ("10/6/2026", "75050-Employee Incentive-Prop Mgmt", 50.00, "Visa", False),
+        ("10/7/2026", "73400-Hskpg Tools-Prop Mgmt", 9.99, "Amazon", False),  # name differs
+    ]
+    rep = parse_expense_report(_report_bytes(lines), "r.xlsx")
+    resolve_categories(rep, list(TRAVEL_NAMES), TRAVEL_NAMES)
+    assert [i.category_code for i in rep.items] == [
+        "75100-570-LDG", "75100-570-MIL", "75100-570", "75100-570", "75050-570", "73400-570"]
+
+
+def test_without_names_travel_lines_fall_back_to_main_line():
+    rep = parse_expense_report(_report_bytes([("10/2/2026", "75100-Mileage", 42.21, "x", True)]),
+                               "r.xlsx")
+    resolve_categories(rep, list(TRAVEL_NAMES))
+    assert rep.items[0].category_code == "75100-570"
+
+
 def test_total_mismatch_is_flagged():
     rep = parse_expense_report(_report_bytes(LINES, total=9999.0), "r.xlsx")
     assert not rep.total_matches
@@ -158,6 +185,7 @@ ALL_CODES = ["73400-570", "73600-570", "74910-570", "75030-570", "75050-570", "7
     ("Office supplies", "74910-570", None),          # already in the suggested category
     ("Compost bags", "72550-570", None),             # 'comp' must be a whole word
     ("", "73400-570", None),
+    ("Office supplies for the trip", "75100-570-MIL", "74910-570"),  # sub-line keeps dept 570
 ])
 def test_suggest_category(reason, code, expected):
     assert suggest_category(reason, code, ALL_CODES) == expected
