@@ -1,3 +1,5 @@
+import calendar
+
 import streamlit as st
 import pandas as pd
 import plotly.graph_objects as go
@@ -7,6 +9,7 @@ from utils.theme import (
     GREEN, AMBER, CLAY, INK, INK_SOFT, INK_FAINT, LINE, SAND, SERIES,
 )
 from utils.db import get_budget_vs_actual, get_expenses, get_categories
+from utils.expense_report import NOTED_SUBTYPES, subtype_from_notes
 from utils.report import build_report
 from utils.auth import current_username
 
@@ -418,6 +421,42 @@ with right:
                         use_container_width=True, config={"displayModeBar": False})
     else:
         st.info("No spend recorded in this selection.")
+
+# ---------------------------------------------------------------------------
+# Lines whose sub-type lives in the note: Travel & Lodging -> Lodging / Mileage / other.
+# One budget line; the split comes from each expense's note (the Emburse import
+# writes "Mileage · ..." for its 75100-Mileage lines).
+# ---------------------------------------------------------------------------
+for _code in sorted(c for c in df["code"].unique() if c.split("-")[0] in NOTED_SUBTYPES):
+    _name = df.loc[df["code"] == _code, "name"].iloc[0]
+    _m1, _m2 = (1, 12) if focus_all else (_cur_month, _cur_month)
+    _tx = get_expenses(category_code=_code, date_from=date(fiscal_year, _m1, 1),
+                       date_to=date(fiscal_year, _m2, calendar.monthrange(fiscal_year, _m2)[1]))
+    _by = dict.fromkeys(list(NOTED_SUBTYPES[_code.split("-")[0]].values()) + ["Other"], 0.0)
+    if not _tx.empty:
+        _tx = _tx[_tx["status"].isin(["paid", "pending"])]  # same rule as the budget view
+        for _n, _amt in zip(_tx["notes"], _tx["amount"]):
+            _by[subtype_from_notes(_code, _n) or "Other"] += float(_amt)
+    _budget = month_df.loc[month_df["code"] == _code, "budgeted_amount"].sum()
+    _left = _budget - sum(_by.values())
+
+    st.divider()
+    section_label(_name)
+    st.markdown(f"#### Spend by type · {'full year' if focus_all else _MONTHS_FULL[_cur_month - 1]}")
+    _cols = st.columns(len(_by) + 1)
+    for _col, (_lab, _amt) in zip(_cols, _by.items()):
+        with _col:
+            st.metric(_lab, f"${_amt:,.0f}",
+                      help=(f"{_name} spend whose note doesn't say "
+                            + " or ".join(l for l in _by if l != "Other") + ".")
+                      if _lab == "Other" else f"{_name} spend noted as {_lab}.")
+    with _cols[-1]:
+        st.metric("Budget", f"${_budget:,.0f}", help=f"One budget covers all of {_name}.")
+        _subtitle(f"${abs(_left):,.0f} {'left' if _left >= 0 else 'over'}",
+                  "#1B7A4B" if _left >= 0 else "#B44C3C")
+    st.caption(f"{_name} ({_code}) is one budget line. The type comes from the start of each "
+               "expense's note: the Emburse import adds it, and for an expense entered by hand, "
+               "start the note with " + " or ".join(l for l in _by if l != "Other") + ".")
 
 st.divider()
 

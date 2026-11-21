@@ -15,7 +15,8 @@ from utils.auth import current_username
 from utils.db import add_expenses_bulk, expense_extra_columns, get_expenses_in_range
 from utils.expense_report import (
     NEW, POSSIBLE, RECORDED, ReportParseError, compare_with_existing, date_window,
-    normalize_vendor, parse_expense_report, resolve_categories, suggest_category,
+    emburse_subtype, normalize_vendor, parse_expense_report, resolve_categories,
+    suggest_category,
 )
 from utils.helpers import get_device
 
@@ -47,6 +48,8 @@ def _report_label(report) -> str:
 
 def _notes_for(item, report) -> str:
     parts = [item.reason or "Expense report item"]
+    if sub := emburse_subtype(item):  # e.g. "Mileage" filed under Travel & Lodging
+        parts.insert(0, sub)
     if item.reimbursable:
         parts.append("reimbursable to employee")
     tag = f"[{_report_label(report)}"
@@ -75,7 +78,6 @@ def render_report_import(categories: pd.DataFrame, vendors: list[str]):
     code_to_label = dict(zip(exp_cats["code"], exp_cats["name"] + "  (" + exp_cats["code"] + ")"))
     label_to_code = {v: k for k, v in code_to_label.items()}
     all_codes = list(categories["code"])
-    code_to_name = dict(zip(categories["code"], categories["name"]))
 
     # ---- Parse every file; drop files that are the same report uploaded twice ----
     reports, seen = [], {}
@@ -96,7 +98,7 @@ def render_report_import(categories: pd.DataFrame, vendors: list[str]):
             continue
         seen[ident] = f.name
         rep = replace(rep, items=[replace(i) for i in rep.items])  # don't mutate the cache
-        resolve_categories(rep, all_codes, code_to_name)
+        resolve_categories(rep, all_codes)
         reports.append(rep)
 
     reports = [r for r in reports if r.items]

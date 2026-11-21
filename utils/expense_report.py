@@ -365,38 +365,46 @@ def parse_expense_report(data: bytes, file_name: str = "report.xls") -> ExpenseR
     return rep
 
 
-def _emburse_name(category_label: str) -> str:
-    """'75100-Travel & Lodging-Prop Mgmt' -> 'travel & lodging'; '75100-Mileage' -> 'mileage'."""
-    name = re.sub(r"^\s*\d{4,6}\s*-?\s*", "", category_label or "")
+# Emburse lines the app files under a broader category. Their name goes at the
+# start of the note so the detail isn't lost: '75100-Mileage' is saved as Travel &
+# Lodging with a note starting "Mileage".
+NOTED_SUBTYPES = {"75100": {"lodging": "Lodging", "mileage": "Mileage"}}
+
+
+def emburse_subtype(item: ReportItem) -> str:
+    """'Mileage' for a '75100-Mileage' line; '' for lines that need no extra note."""
+    name = re.sub(r"^\s*\d{4,6}\s*-?\s*", "", item.category_label or "")
     name = re.sub(r"\s*-\s*prop\.?\s*mgmt\.?\s*$", "", name, flags=re.I)
-    return re.sub(r"\s+", " ", name).strip().lower()
+    name = re.sub(r"\s+", " ", name).strip().lower()
+    return NOTED_SUBTYPES.get(item.account, {}).get(name, "")
 
 
-def resolve_categories(report: ExpenseReport, category_codes: list[str],
-                       category_names: dict[str, str] | None = None) -> None:
+def subtype_from_notes(category_code: str, notes: str) -> str:
+    """The sub-type a recorded expense's note names: 'Mileage' for 'Mileage · Drive to
+    Denver' (written by the import) or 'mileage to Denver' (typed by hand); '' if none.
+    When a note names more than one, the first mention wins."""
+    text = (notes or "").lower()
+    hits = []
+    for key, label in NOTED_SUBTYPES.get((category_code or "").split("-")[0], {}).items():
+        m = re.search(rf"\b{re.escape(key)}\b", text)
+        if m:
+            hits.append((m.start(), label))
+    return min(hits)[1] if hits else ""
+
+
+def resolve_categories(report: ExpenseReport, category_codes: list[str]) -> None:
     """Fill item.category_code from the app's chart of accounts.
 
     Emburse gives '75000-Meals-Prop Mgmt' + department 'P8P-570-...'; the app code is
-    '75000-570'. When one account has several app categories (75100: Travel & Lodging,
-    Lodging, Mileage), the Emburse category name picks between them, so pass
-    `category_names` ({code: name}). Falls back to the only app code starting with
-    the account number."""
+    '75000-570'. Falls back to the only app code starting with the account number."""
     codes = set(category_codes)
-    names = {c: re.sub(r"\s+", " ", n or "").strip().lower()
-             for c, n in (category_names or {}).items()}
     by_account = defaultdict(list)
     for c in category_codes:
         by_account[c.split("-")[0]].append(c)
     for it in report.items:
         dept = _dept_number(it.department) or _dept_number(report.department)
         guess = f"{it.account}-{dept}" if dept else None
-        wanted = _emburse_name(it.category_label)
-        named = [c for c in by_account.get(it.account, []) if wanted and names.get(c) == wanted]
-        if len(named) > 1 and dept:  # same name in several departments
-            named = [c for c in named if c.split("-")[1:2] == [dept]]
-        if len(named) == 1:
-            it.category_code = named[0]
-        elif guess in codes:
+        if guess in codes:
             it.category_code = guess
         elif len(by_account.get(it.account, [])) == 1:
             it.category_code = by_account[it.account][0]
@@ -532,8 +540,7 @@ def suggest_category(reason: str, current_code: str | None, category_codes: list
     if not reason or not current_code:
         return None
     text = reason.lower()
-    # '75100-570-MIL' -> account 75100, dept 570 (the suffix marks a sub-line)
-    account, dept = (current_code.split("-") + [""])[:2]
+    account, _, dept = current_code.partition("-")
     codes = set(category_codes)
     for pattern, applies_to, target in _SUGGEST_RULES:
         if applies_to and account not in applies_to:
