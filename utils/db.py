@@ -202,10 +202,14 @@ def expense_exists(category_code, txn_date, amount, vendor, invoice_number) -> b
 
 
 def add_expense(category_code, vendor, invoice_number, txn_date, amount, status, notes,
-                user_id, device=None):
+                user_id, device=None, spent_by=None, location=None, receipt_url=None):
     client = get_authed_client()
+    extras = {k: (v or "").strip() or None for k, v in
+              (("spent_by", spent_by), ("location", location), ("receipt_url", receipt_url))}
+    extras = {k: v for k, v in extras.items() if v} if expense_extra_columns() else {}
     try:
         client.table("expenses").insert({
+            **extras,
             "category_code": category_code,
             "vendor": vendor,
             "invoice_number": invoice_number,

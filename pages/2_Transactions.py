@@ -146,6 +146,16 @@ with tab_edit:
                 new_date = st.date_input("Date", value=pd.to_datetime(row["txn_date"]).date())
                 new_invoice = st.text_input("Invoice #", value=row.get("invoice_number") or "NA")
             new_notes = st.text_area("Quick note (single field)", value=row.get("notes") or "")
+            _has_extra = "spent_by" in expenses.columns
+            if _has_extra:
+                x1, x2, x3 = st.columns(3)
+                with x1:
+                    new_spent_by = st.text_input("Spent by", value=row.get("spent_by") or "")
+                with x2:
+                    new_location = st.text_input("Location", value=row.get("location") or "")
+                with x3:
+                    new_receipt = st.text_input("Receipt link", value=row.get("receipt_url") or "",
+                                                placeholder="https://…")
             st.caption(f"Code: {row['category_code']} · {row['category']}")
 
             save_col, delete_col = st.columns([3, 1])
@@ -155,13 +165,22 @@ with tab_edit:
                 delete = st.form_submit_button("Delete", use_container_width=True)
 
             if save:
-                update_expense(expense_id, {
+                fields = {
                     "amount": new_amount, "status": new_status, "vendor": new_vendor,
                     "txn_date": str(new_date), "invoice_number": new_invoice.strip() or "NA",
                     "notes": new_notes,
-                }, current_username(), device=get_device())
-                st.success("Updated.")
-                st.rerun()
+                }
+                if _has_extra:
+                    fields.update(spent_by=new_spent_by.strip() or None,
+                                  location=new_location.strip() or None,
+                                  receipt_url=new_receipt.strip() or None)
+                if _has_extra and fields["receipt_url"] and \
+                        not fields["receipt_url"].lower().startswith(("http://", "https://")):
+                    st.error("The receipt link should start with https://")
+                else:
+                    update_expense(expense_id, fields, current_username(), device=get_device())
+                    st.success("Updated.")
+                    st.rerun()
 
             if delete:
                 soft_delete_expense(expense_id, current_username(), device=get_device())

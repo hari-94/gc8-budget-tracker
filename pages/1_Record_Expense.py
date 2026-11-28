@@ -130,6 +130,20 @@ else:
     notes = st.text_area("Notes", placeholder="Optional context — approval, dispute, reason for the cost",
                          key=f"f_notes_{_seq}")
 
+    st.caption("Optional — fill in if you have it (Emburse imports fill these automatically).")
+    e1, e2, e3 = st.columns(3)
+    with e1:
+        spent_by = st.text_input("Spent by", placeholder="Who paid, e.g. Rigoberto Garcia",
+                                 key=f"f_spent_by_{_seq}")
+    with e2:
+        location = st.text_input("Location", placeholder="e.g. Breckenridge, CO",
+                                 key=f"f_location_{_seq}")
+    with e3:
+        receipt_url = st.text_input("Receipt link", placeholder="https://…",
+                                    help="Paste a link to the receipt — Emburse, OneDrive, SharePoint, etc.",
+                                    key=f"f_receipt_{_seq}")
+    receipt_url = (receipt_url or "").strip()
+
     # Normalize invoice to NA when blank
     inv_clean = (invoice_number or "").strip() or "NA"
 
@@ -146,6 +160,8 @@ else:
             st.error("Choose a category.")
         elif not vendor:
             st.error("Choose an existing vendor, or switch on the toggle to add a new one.")
+        elif receipt_url and not receipt_url.lower().startswith(("http://", "https://")):
+            st.error("The receipt link should start with https:// — copy the full link from your browser.")
         else:
             # Duplicate guard (uses the signed amount so a credit and an expense of the
             # same size aren't treated as the same row)
@@ -165,6 +181,7 @@ else:
                     category_code=code, vendor=vendor.strip(),
                     invoice_number=inv_clean, txn_date=txn_date, amount=signed_amount,
                     status=status, notes=notes, user_id=current_username(), device=get_device(),
+                    spent_by=spent_by, location=location, receipt_url=receipt_url,
                 )
             except ValueError:
                 # Blocked by the database dedup guard
