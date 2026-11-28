@@ -48,6 +48,15 @@ if expenses.empty:
 
 expenses["category"] = expenses["category_code"].map(cat_name_map).fillna(expenses["category_code"])
 
+# Who captured each line. Rows from the one-time spreadsheet import (Jul 2026)
+# have no created_by, so label them instead of leaving the cell blank.
+IMPORTED_LABEL = "Initial import"
+expenses["entered_by"] = expenses["created_by"].fillna("").replace("", IMPORTED_LABEL)
+expenses["entered_on"] = expenses["created_at"].apply(fmt_mt)
+_edited = expenses["updated_at"] != expenses["created_at"]
+expenses["edited_by"] = expenses["updated_by"].where(_edited, "").fillna("")
+expenses["edited_on"] = expenses["updated_at"].apply(fmt_mt).where(_edited, "")
+
 top_l, top_r = st.columns([3, 1])
 with top_l:
     st.caption(f"{len(expenses)} transactions · total ${expenses['amount'].sum():,.2f}")
@@ -58,10 +67,21 @@ table = expenses.rename(columns={
     "vendor": "Vendor", "invoice_number": "Invoice #", "amount": "Amount",
     "status": "Status", "notes": "Notes",
     "spent_by": "Spent by", "location": "Location", "receipt_url": "Receipt",
+    "entered_by": "Entered by", "entered_on": "Entered on",
+    "edited_by": "Last edited by", "edited_on": "Last edited on",
 })
 # Spent by / Location / Receipt exist once migration_expense_report_fields.sql has run
 _extra = [c for c in ("Spent by", "Location", "Receipt") if c in table.columns]
-table = table[["Date", "Code", "Category", "Vendor", "Invoice #", "Amount", "Status", "Notes"] + _extra]
+table = table[["Date", "Code", "Category", "Vendor", "Invoice #", "Amount", "Status", "Notes"] + _extra
+              + ["Entered by", "Entered on", "Last edited by", "Last edited on"]]
+
+who_filter = st.multiselect("Entered by", options=sorted(table["Entered by"].unique()),
+                            placeholder="Everyone")
+if who_filter:
+    keep = table["Entered by"].isin(who_filter)
+    table, expenses = table[keep], expenses[keep]
+    with top_l:
+        st.caption(f"Showing {len(table)} entered by {', '.join(who_filter)} · ${table['Amount'].sum():,.2f}")
 
 # Excel export (includes Code column)
 with top_r:
@@ -99,12 +119,20 @@ selected_label = st.selectbox("Select a transaction", options=expenses["sel"])
 row = expenses[expenses["sel"] == selected_label].iloc[0]
 expense_id = row["id"]
 
+_who = f"Entered by **{row['entered_by']}**"
+if row["entered_by"] != IMPORTED_LABEL:
+    _who += f" · {row['entered_on']}"
+if row["edited_by"]:
+    _who += f"  ·  last edited by **{row['edited_by']}** · {row['edited_on']}"
+st.caption(_who)
+
 tab_edit, tab_notes, tab_history = st.tabs(["Edit", "Notes", "History"])
 
 with tab_edit:
     if not can_edit():
         st.info("You have view-only access.")
-        st.write(row[["txn_date", "category_code", "category", "vendor", "invoice_number", "amount", "status", "notes"]])
+        st.write(row[["txn_date", "category_code", "category", "vendor", "invoice_number", "amount", "status", "notes",
+                      "entered_by", "entered_on", "edited_by", "edited_on"]])
     else:
         with st.form(f"edit_form_{expense_id}"):
             c1, c2 = st.columns(2)

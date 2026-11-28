@@ -179,8 +179,17 @@ def get_expenses(status=None, category_code=None, date_from=None, date_to=None, 
         q = q.gte("txn_date", str(date_from))
     if date_to:
         q = q.lte("txn_date", str(date_to))
-    res = q.order("txn_date", desc=True).limit(limit).execute()
-    return pd.DataFrame(res.data)
+    # PostgREST caps each response at 1000 rows, so page through until `limit`.
+    q = q.order("txn_date", desc=True).order("id")
+    rows, page = [], 1000
+    while len(rows) < limit:
+        start = len(rows)
+        end = min(start + page, limit) - 1
+        batch = q.range(start, end).execute().data
+        rows.extend(batch)
+        if len(batch) < end - start + 1:
+            break
+    return pd.DataFrame(rows)
 
 
 def expense_exists(category_code, txn_date, amount, vendor, invoice_number) -> bool:
